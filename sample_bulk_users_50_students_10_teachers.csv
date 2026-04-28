@@ -1,0 +1,61 @@
+name,number,password,role,schoolName,className,section,academicyears,address,parentName,subject,qualification
+Student 01,9000000001,Stud@123,student,Sunrise Public School,1,A,2024,Area 1 City,Parent 01,,
+Student 02,9000000002,Stud@123,student,Green Valley School,2,B,2024,Area 2 City,Parent 02,,
+Student 03,9000000003,Stud@123,student,Riverdale Academy,3,C,2024,Area 3 City,Parent 03,,
+Student 04,9000000004,Stud@123,student,Hilltop International,4,A,2024,Area 4 City,Parent 04,,
+Student 05,9000000005,Stud@123,student,Bluebell High School,5,B,2024,Area 5 City,Parent 05,,
+Student 06,9000000006,Stud@123,student,Oakridge Public School,6,C,2024,Area 6 City,Parent 06,,
+Student 07,9000000007,Stud@123,student,Starlight Convent,7,A,2024,Area 7 City,Parent 07,,
+Student 08,9000000008,Stud@123,student,Bright Future School,8,B,2024,Area 8 City,Parent 08,,
+Student 09,9000000009,Stud@123,student,Lotus Model School,9,C,2024,Area 9 City,Parent 09,,
+Student 10,9000000010,Stud@123,student,New Horizon School,10,A,2024,Area 10 City,Parent 10,,
+Student 11,9000000011,Stud@123,student,Pinecrest Academy,1,B,2024,Area 11 City,Parent 11,,
+Student 12,9000000012,Stud@123,student,Royal Scholars School,2,C,2024,Area 12 City,Parent 12,,
+Student 13,9000000013,Stud@123,student,Scholars Point School,3,A,2024,Area 13 City,Parent 13,,
+Student 14,9000000014,Stud@123,student,Future Minds School,4,B,2024,Area 14 City,Parent 14,,
+Student 15,9000000015,Stud@123,student,Silver Oak School,5,C,2024,Area 15 City,Parent 15,,
+Student 16,9000000016,Stud@123,student,Maple Leaf Academy,6,A,2024,Area 16 City,Parent 16,,
+Student 17,9000000017,Stud@123,student,City Central School,7,B,2024,Area 17 City,Parent 17,,
+Student 18,9000000018,Stud@123,student,Mountview School,8,C,2024,Area 18 City,Parent 18,,
+Student 19,9000000019,Stud@123,student,Golden Heights School,9,A,2024,Area 19 City,Parent 19,,
+Student 20,9000000020,Stud@123,student,Oxford Kids School,10,B,2024,Area 20 City,Parent 20,,
+Student 21,9000000021,Stud@123,student,Sunrise Public School,1,C,2025,Area 21 City,Parent 21,,
+Student 22,9000000022,Stud@123,student,Green Valley School,2,A,2025,Area 22 City,Parent 22,,
+Student 23,9000000023,Stud@123,student,Riverdale Academy,3,B,2025,Area 23 City,Parent 23,,
+Student 24,9000000024,Stud@123,student,Hilltop International,4,C,2025,Area 24 City,Parent 24,,
+Student 25,9000000025,Stud@123,student,Bluebell High School,5,A,2025,Area 25 City,Parent 25,,
+Student 26,9000000026,Stud@123,student,Oakridge Public School,6,B,2025,Area 26 City,Parent 26,,
+Student 27,9000000027,Stud@123,student,Starlight Convent,7,C,2025,Area 27 City,Parent 27,,
+Student 28,9000000028,Stud@123,student,Bright Future School,8,A,2025,Area 28 City,Parent 28,,
+Student 29,9000000029,Stud@123,student,Lotus Model School,9,B,2025,Area 29 City,Parent 29,,
+Student 30,9000000030,Stud@123,student,New Horizon School,10,C,2025,Area 30 City,Parent 30,,
+Student 31,9000000031,Stud@123,student,Pinecrest Academy,1,A,2025,Area 31 City,Parent 31,,
+Student 32,9000000032,Stud@123,student,Royal Scholars School,2,B,2025,Area 32 City,Parent 32,,
+Student 33,9000000033,Stud@123,student,Scholars Point School,3,C,2025,Area 33 City,Parent 33,,
+Student 34,9000000034,Stud@123,student,Future Minds School,4,A,2025,Area 34 City,Parent 34,,
+Student 35,9000000035,Stud@123,student,Silver Oak School,5,B,2025,Area 35 City,Parent 35,,
+Student 36,9000000036,Stud@123,student,Maple Leaf Academy,6,C,2025,Area 36 City,Parent 36,,
+Student 37,9000000037,Stud@123,student,City Central School,7,A,2025,Area 37 City,Parent 37,,
+Student 38,9000000038,Stud@123,student,Mountview School,8,B,2025,Area 38 City,Parent 38,,
+Student 39,9000000039,Stud@123,student,Golden Heights School,9,C,2025,Area 39 City,Parent 39,,
+Student 40,9000000040,Stud@123,student,Oxford Kids School,10,A,2025,Area 40 City,Parent 40,,
+Student 41,9000000041,Stud@123,student,Sunrise Public School,1,B,2026,Area 41 City,Parent 41,,
+Student 42,9000000042,Stud@123,student,Green Valley School,2,C,2026,Area 42 City,Parent 42,,
+Student 43,9000000043,Stud@123,student,Riverdale Academy,3,A,2026,Area 43 City,Parent 43,,
+Student 44,9000000044,Stud@123,student,Hilltop International,4,B,2026,Area 44 City,Parent 44,,
+Student 45,9000000045,Stud@123,student,Bluebell High School,5,C,2026,Area 45 City,Parent 45,,
+Student 46,9000000046,Stud@123,student,Oakridge Public School,6,A,2026,Area 46 City,Parent 46,,
+Student 47,9000000047,Stud@123,student,Starlight Convent,7,B,2026,Area 47 City,Parent 47,,
+Student 48,9000000048,Stud@123,student,Bright Future School,8,C,2026,Area 48 City,Parent 48,,
+Student 49,9000000049,Stud@123,student,Lotus Model School,9,A,2026,Area 49 City,Parent 49,,
+Student 50,9000000050,Stud@123,student,New Horizon School,10,B,2026,Area 50 City,Parent 50,,
+Teacher 01,9000000051,Teach@123,teacher,Maple Leaf Academy,,,,,Mathematics,M.Sc B.Ed
+Teacher 02,9000000052,Teach@123,teacher,City Central School,,,,,English,M.A B.Ed
+Teacher 03,9000000053,Teach@123,teacher,Mountview School,,,,,Physics,M.Sc B.Ed
+Teacher 04,9000000054,Teach@123,teacher,Golden Heights School,,,,,Chemistry,M.Sc B.Ed
+Teacher 05,9000000055,Teach@123,teacher,Oxford Kids School,,,,,Biology,M.Sc B.Ed
+Teacher 06,9000000056,Teach@123,teacher,Sunrise Public School,,,,,History,M.A B.Ed
+Teacher 07,9000000057,Teach@123,teacher,Green Valley School,,,,,Geography,M.A B.Ed
+Teacher 08,9000000058,Teach@123,teacher,Riverdale Academy,,,,,Computer Science,MCA B.Ed
+Teacher 09,9000000059,Teach@123,teacher,Hilltop International,,,,,Hindi,M.A B.Ed
+Teacher 10,9000000060,Teach@123,teacher,Bluebell High School,,,,,Economics,M.A B.Ed
