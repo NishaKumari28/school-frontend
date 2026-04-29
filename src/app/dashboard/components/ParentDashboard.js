@@ -1,5 +1,5 @@
 'use client';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
 import {
   getAttendanceList,
@@ -29,6 +29,28 @@ const sortLatestFirst = (items = []) => [...items].sort((a, b) => getLatestTimes
 
 export default function ParentDashboard({ user, allUsers, showMessage, loadData }) {
   const [activeTab, setActiveTab] = useState('overview');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('school_theme');
+    if (savedTheme === 'dark') {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDarkMode;
+    setIsDarkMode(newTheme);
+    if (newTheme) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('school_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('school_theme', 'light');
+    }
+  };
+
 
   const students = useMemo(() => allUsers.filter((entry) => entry.role === 'student'), [allUsers]);
 
@@ -206,76 +228,89 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
   }
 
   return (
-    <div className='mx-auto max-w-7xl p-6 grid gap-6 lg:grid-cols-[260px_1fr]'>
-      <aside className='rounded-2xl border border-slate-200/50 bg-gradient-to-b from-slate-50 to-blue-50 p-6 shadow-xl backdrop-blur-sm h-fit lg:sticky lg:top-24 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto'>
+    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
+      <aside className={`w-80 flex-shrink-0 border-r shadow-lg z-40 flex flex-col h-screen sticky top-0 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className='text-center mb-6'>
-          {user.profilePhoto ? (
-            <img
-              src={user.profilePhoto}
-              alt={user.name}
-              className='mx-auto mb-3 h-20 w-20 rounded-full object-cover border-4 border-white shadow-lg'
-            />
-          ) : (
-            <div className='mx-auto mb-3 flex h-20 w-20 items-center justify-center rounded-full bg-gradient-to-r from-blue-500 to-cyan-500 text-3xl font-bold text-white'>
-              {user.name?.charAt(0)?.toUpperCase() || 'P'}
-            </div>
+          <div className="relative inline-block mt-4 mb-3">
+            {user.profilePhoto ? (
+              <img src={user.profilePhoto} alt={user.name} className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg mx-auto" />
+            ) : (
+              <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center text-3xl font-bold border-3 border-blue-500 ${isDarkMode ? 'bg-gray-700 text-white' : 'bg-gradient-to-r from-blue-500 to-cyan-500 text-white'}`}>
+                {user.name?.charAt(0)?.toUpperCase() || 'P'}
+              </div>
+            )}
+            <label className="absolute bottom-0 right-[25%] lg:right-[35%] bg-blue-600 rounded-full p-1.5 cursor-pointer hover:bg-blue-700 transition shadow-md">
+              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <input type="file" accept="image/*" onChange={handleProfilePhotoChange} className="hidden" />
+            </label>
+          </div>
+          {user.profilePhoto && (
+            <button onClick={handleRemoveProfilePhoto} className="mt-1 text-xs text-red-500 hover:text-red-700 transition block mx-auto mb-3">
+              Remove Photo
+            </button>
           )}
-          <h3 className='text-xl font-bold text-slate-900'>{user.name}</h3>
-          <p className='mt-1 text-sm text-slate-600'>Monitoring: {linkedChild.name}</p>
-          <p className='text-xs text-slate-500'>
+
+          <h3 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{user.name}</h3>
+          <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>Monitoring: {linkedChild.name}</p>
+          <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-slate-500'}`}>
             Class {linkedChild.className || 'N/A'} | Section {linkedChild.section || linkedChild.sec || 'N/A'}
           </p>
           {user?.schoolName && (
-            <p className="text-xs font-semibold text-slate-700 mt-2">🏫 {user.schoolName}</p>
+            <p className={`text-xs font-semibold mt-2 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>🏫 {user.schoolName}</p>
           )}
-          <p className="text-xs font-semibold text-slate-600 mt-1">📚 Board: {user?.board || 'N/A'}</p>
-          <div className='mt-4 flex flex-wrap items-center justify-center gap-2'>
-            <label className='cursor-pointer rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700'>
-              Change Photo
-              <input
-                type='file'
-                accept='image/*'
-                className='hidden'
-                onChange={handleProfilePhotoChange}
-              />
-            </label>
-            {user.profilePhoto && (
-              <button
-                type='button'
-                onClick={handleRemoveProfilePhoto}
-                className='rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50'
-              >
-                Remove
-              </button>
+          <p className={`text-xs font-semibold mt-1 ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>📚 Board: {user?.board || 'N/A'}</p>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className={`mt-4 w-full py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all duration-300 ${isDarkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600 border border-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200'}`}
+          >
+            {isDarkMode ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                Light Mode
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                Dark Mode
+              </>
             )}
+          </button>
+        </div>
+
+        </div>
+
+        {/* Navigation Menu */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className={`text-xs font-semibold uppercase tracking-wider mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
+          <div className="space-y-1">
+            {navButtons.map((btn) => (
+              <button
+                key={btn.tab}
+                onClick={() => setActiveTab(btn.tab)}
+                className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === btn.tab ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
+              >
+                {btn.label}
+              </button>
+            ))}
           </div>
         </div>
 
-        <div className='space-y-2 border-t border-blue-200 pt-4'>
-          {navButtons.map((btn) => (
-            <button
-              key={btn.tab}
-              type='button'
-              onClick={() => setActiveTab(btn.tab)}
-              className={`w-full rounded-xl border px-4 py-3 text-left transition-all duration-200 ${
-                activeTab === btn.tab
-                  ? 'border-blue-400 bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-300/50'
-                  : 'border-slate-200/50 bg-white/70 font-medium text-slate-800 hover:border-blue-300/50 hover:bg-white hover:text-blue-700'
-              }`}
-            >
-              <span className='text-sm font-semibold'>{btn.label}</span>
-            </button>
-          ))}
+        {/* Logout Button */}
+        <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
+            Logout
+          </button>
         </div>
-
-        {/* <div className='mt-4 rounded-xl bg-blue-100/60 p-4'>
-          <p className='text-xs font-semibold text-blue-900'>Payment Plans</p>
-          <p className='mt-1 text-sm text-blue-800'>Use one-time, installment, half-yearly, or yearly requests based on what suits your family.</p>
-        </div> */}
       </aside>
 
-      <div>
-        <div className='mb-8 border-b-2 border-slate-200/50 pb-4'>
+      {/* MAIN CONTENT */}
+      <main className="flex-1 overflow-y-auto p-6 min-h-screen">
+        <div className={`mb-8 border-b-2 ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}/50 pb-4`}>
           <nav className='flex flex-wrap gap-4'>
             {navButtons.map((btn) => (
               <button
@@ -312,9 +347,9 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
               </div>
 
               <div className='grid gap-6 lg:grid-cols-2'>
-                <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                  <h3 className='text-lg font-semibold text-slate-900'>Child Snapshot</h3>
-                  <div className='mt-4 space-y-2 text-sm text-slate-700'>
+                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                  <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Child Snapshot</h3>
+                  <div className={`mt-4 space-y-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
                     <p><span className='font-semibold'>Student:</span> {linkedChild.name}</p>
                     <p><span className='font-semibold'>Class:</span> {linkedChild.className || 'N/A'}</p>
                     <p><span className='font-semibold'>Section:</span> {linkedChild.section || linkedChild.sec || 'N/A'}</p>
@@ -325,9 +360,9 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                   </div>
                 </div>
 
-                <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                  <h3 className='text-lg font-semibold text-slate-900'>Latest Status</h3>
-                  <div className='mt-4 space-y-3 text-sm text-slate-700'>
+                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                  <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Latest Status</h3>
+                  <div className={`mt-4 space-y-3 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
                     <p>
                       <span className='font-semibold'>Recent attendance:</span>{' '}
                       {attendanceRecords[0] ? `${attendanceRecords[0].status} on ${new Date(attendanceRecords[0].date).toLocaleDateString()}` : 'No attendance record yet'}
@@ -349,8 +384,8 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
 
           {activeTab === 'progress' && (
             <div className='space-y-6'>
-              <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                <h2 className='text-lg font-semibold text-slate-900'>Attendance Performance</h2>
+              <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Attendance Performance</h2>
                 <div className='mt-4 grid gap-4 md:grid-cols-4'>
                   <DashboardCard title='Present' icon='P' value={attendanceStats.present} color='green' className='h-auto min-h-[9rem]' />
                   <DashboardCard title='Absent' icon='A' value={attendanceStats.absent} color='red' className='h-auto min-h-[9rem]' />
@@ -362,8 +397,8 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                     <p className='text-slate-500'>No attendance records found.</p>
                   ) : (
                     attendanceRecords.slice(0, 10).map((record) => (
-                      <div key={record.id} className='flex items-center justify-between rounded-lg border border-slate-200 p-3'>
-                        <span className='text-sm text-slate-700'>{new Date(record.date).toLocaleDateString()}</span>
+                      <div key={record.id} className={`flex items-center justify-between rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-3`}>
+                        <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{new Date(record.date).toLocaleDateString()}</span>
                         <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                           record.status === 'present'
                             ? 'bg-green-100 text-green-700'
@@ -380,8 +415,8 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
               </div>
 
               <div className='grid gap-6 lg:grid-cols-2'>
-                <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                  <h2 className='text-lg font-semibold text-slate-900'>Homework Status</h2>
+                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Homework Status</h2>
                   <div className='mt-4 space-y-3'>
                     {childHomework.length === 0 ? (
                       <p className='text-slate-500'>No homework assigned yet.</p>
@@ -390,12 +425,12 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                         const submission = (homework.submissions || []).find((entry) => entry.studentId === linkedChild.id);
                         const isSubmitted = Boolean(submission);
                         return (
-                          <div key={homework.id} className='rounded-lg border border-slate-200 p-4'>
+                          <div key={homework.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
                             <div className='flex items-start justify-between gap-3'>
                               <div>
-                                <p className='font-semibold text-slate-900'>{homework.title}</p>
+                                <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{homework.title}</p>
                                 <p className='text-xs text-slate-500'>Due: {homework.dueDate || 'N/A'}</p>
-                                <p className='mt-1 text-sm text-slate-700'>{homework.description}</p>
+                                <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{homework.description}</p>
                               </div>
                               <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                                 isSubmitted ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'
@@ -410,8 +445,8 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                   </div>
                 </div>
 
-                <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                  <h2 className='text-lg font-semibold text-slate-900'>Study Materials</h2>
+                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Study Materials</h2>
                   <div className='mt-4 space-y-3'>
                     {childMaterials.length === 0 ? (
                       <p className='text-slate-500'>No study materials available yet.</p>
@@ -419,12 +454,12 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                       childMaterials.map((material) => {
                         const isRead = (material.readBy || []).some((entry) => entry.studentId === linkedChild.id);
                         return (
-                          <div key={material.id} className='rounded-lg border border-slate-200 p-4'>
+                          <div key={material.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
                             <div className='flex items-start justify-between gap-3'>
                               <div>
-                                <p className='font-semibold text-slate-900'>{material.title}</p>
+                                <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{material.title}</p>
                                 <p className='text-xs text-slate-500'>Type: {material.type}</p>
-                                <p className='mt-1 text-sm text-slate-700'>{material.description}</p>
+                                <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{material.description}</p>
                               </div>
                               <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
                                 isRead ? 'bg-green-100 text-green-700' : 'bg-blue-100 text-blue-700'
@@ -443,21 +478,21 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
           )}
 
           {activeTab === 'notifications' && (
-            <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-              <h2 className='text-lg font-semibold text-slate-900'>School Notices</h2>
+            <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+              <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>School Notices</h2>
               <p className='mt-1 text-sm text-slate-600'>Only notices sent to parents or all users are shown here.</p>
               <div className='mt-4 space-y-4'>
                 {notifications.length === 0 ? (
                   <p className='text-slate-500'>No notices available.</p>
                 ) : (
                   notifications.map((notification) => (
-                    <div key={notification.id} className='rounded-lg border border-slate-200 p-4'>
+                    <div key={notification.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
                       <div className='flex items-start justify-between gap-3'>
                         <div>
-                          <h3 className='font-semibold text-slate-900'>{notification.title}</h3>
-                          <p className='mt-1 text-sm text-slate-700'>{notification.message}</p>
+                          <h3 className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{notification.title}</h3>
+                          <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{notification.message}</p>
                         </div>
-                        <span className='rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700'>
+                        <span className={`rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
                           {notification.targetRole}
                         </span>
                       </div>
@@ -481,9 +516,9 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
               </div>
 
               <div className='grid gap-6 lg:grid-cols-2'>
-                <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                  <h2 className='text-lg font-semibold text-slate-900'>Fee Summary</h2>
-                  <div className='mt-4 space-y-2 text-sm text-slate-700'>
+                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fee Summary</h2>
+                  <div className={`mt-4 space-y-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
                     <p><span className='font-semibold'>Student:</span> {linkedChild.name}</p>
                     <p><span className='font-semibold'>Class:</span> {linkedChild.className || 'N/A'}</p>
                     <p><span className='font-semibold'>Total annual fee:</span> Rs. {feeSummary.totalFee}</p>
@@ -494,12 +529,12 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                   </div>
                 </div>
 
-                <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                  <h2 className='text-lg font-semibold text-slate-900'>Payment Mode</h2>
+                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Payment Mode</h2>
                   <p className='mt-1 text-sm text-slate-600'>
                     Parents can view fee payment status here, but cannot submit fee from the application.
                   </p>
-                  <div className='mt-4 space-y-3 text-sm text-slate-700'>
+                  <div className={`mt-4 space-y-3 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
                     <p><span className='font-semibold'>Selected mode:</span> {latestPaymentMode}</p>
                     <p><span className='font-semibold'>Cycle:</span> {latestPayment?.note || 'School will update whether it is monthly, semester, installment (3/4/6 months), or one-time.'}</p>
                     <p><span className='font-semibold'>Current status:</span> {latestPayment?.status || 'Pending update from school office'}</p>
@@ -508,16 +543,16 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                 </div>
               </div>
 
-              <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                <h2 className='text-lg font-semibold text-slate-900'>Fee Notices</h2>
+              <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fee Notices</h2>
                 <div className='mt-4 space-y-3'>
                   {feeNotices.length === 0 ? (
                     <p className='text-slate-500'>No fee-related notices available right now.</p>
                   ) : (
                     feeNotices.map((notice) => (
-                      <div key={notice.id} className='rounded-lg border border-slate-200 p-4'>
-                        <p className='font-semibold text-slate-900'>{notice.title}</p>
-                        <p className='mt-1 text-sm text-slate-700'>{notice.message}</p>
+                      <div key={notice.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
+                        <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{notice.title}</p>
+                        <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{notice.message}</p>
                         <p className='mt-2 text-xs text-slate-500'>
                           From {notice.senderName} ({notice.senderRole}) on {new Date(notice.sentAt).toLocaleDateString()}
                         </p>
@@ -527,18 +562,18 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                 </div>
               </div>
 
-              <div className='rounded-xl border border-slate-200 bg-white p-6 shadow-sm'>
-                <h2 className='text-lg font-semibold text-slate-900'>Payment History</h2>
+              <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Payment History</h2>
                 <div className='mt-4 space-y-3'>
                   {feePayments.length === 0 ? (
                     <p className='text-slate-500'>No payment status has been updated by school yet.</p>
                   ) : (
                     feePayments.map((payment) => (
-                      <div key={payment.id} className='rounded-lg border border-slate-200 p-4'>
+                      <div key={payment.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
                         <div className='flex flex-wrap items-start justify-between gap-3'>
                           <div>
-                            <p className='font-semibold text-slate-900'>Rs. {payment.amount}</p>
-                            <p className='text-sm text-slate-700'>Plan: {payment.plan.replace('_', ' ')}</p>
+                            <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Rs. {payment.amount}</p>
+                            <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Plan: {payment.plan.replace('_', ' ')}</p>
                             <p className='text-xs text-slate-500'>
                               Requested on {new Date(payment.requestedAt).toLocaleDateString()}
                             </p>
@@ -562,7 +597,7 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

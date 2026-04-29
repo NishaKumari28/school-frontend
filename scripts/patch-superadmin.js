@@ -21,8 +21,7 @@ if (content.includes(allUsersHeading) && !content.includes('filteredUsers.length
 // 3. Non teaching Staff rename in display labels
 content = content.replace(/title="Staff"/g, 'title="Non teaching Staff"');
 content = content.replace(/"Staff List"/g, '"Non teaching Staff List"');
-content = content.replace(/>Staff<\\/option>/g, '>Non teaching Staff</option>');
-
+content = content.replace(/>Staff<\/option>/g, '>Non teaching Staff</option>');
 fs.writeFileSync(filePath, content);
 console.log('SuperadminDashboard.js patched successfully!');
 

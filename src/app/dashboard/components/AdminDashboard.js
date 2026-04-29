@@ -5,6 +5,7 @@ import AnalyticsChart from './Charts';
 import DashboardCard from './DashboardCard';
 import UserEditModal from './UserEditModal';
 import DownloadCSVModal from './DownloadCSVModal';
+import PasswordResetModal from './PasswordResetModal';
 import MultiSelect from './MultiSelect';
 import { getUserList, setUserList, sanitizePhoneNumber, isValidPhoneNumber, getPhoneValidationMessage } from '../../components/auth/authService';
 
@@ -151,12 +152,16 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
   const [newUser, setNewUser] = useState({
     name: '', number: '', password: '', role: '',
     className: '', section: '', subject: '', qualification: '',
-    address: '', admissionYear: '', parentName: '',
+    address: '', academicYear: '2026-27', parentName: '',
     childName: '', childClass: '', childSection: '', relationWithChild: '',
     designation: '',
   });
   const [inlineLinkStudent, setInlineLinkStudent] = useState('');
   const [inlineLinkParent, setInlineLinkParent] = useState('');
+  const [inlineLinkSearchTerm, setInlineLinkSearchTerm] = useState('');
+  const [inlineLinkAcademicYearFilter, setInlineLinkAcademicYearFilter] = useState('');
+  const [inlineLinkClassFilter, setInlineLinkClassFilter] = useState('');
+  const [inlineLinkSectionFilter, setInlineLinkSectionFilter] = useState('');
 
   // CSV Upload States
   const [csvData, setCsvData] = useState([]);
@@ -273,6 +278,23 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
   const parents = visibleUsers.filter(u => u.role === 'parents');
   const staff = visibleUsers.filter(u => u.role === 'staff');
 
+  const filteredInlineLinkStudents = useMemo(() => {
+    return students.filter(s => {
+      if (inlineLinkAcademicYearFilter && s.academicYear !== inlineLinkAcademicYearFilter) return false;
+      if (inlineLinkClassFilter && s.className !== inlineLinkClassFilter) return false;
+      if (inlineLinkSectionFilter && s.section !== inlineLinkSectionFilter) return false;
+      if (inlineLinkSearchTerm) {
+        const term = inlineLinkSearchTerm.toLowerCase();
+        return (
+          s.name?.toLowerCase().includes(term) ||
+          s.number?.includes(term) ||
+          s.className?.toLowerCase().includes(term)
+        );
+      }
+      return true;
+    });
+  }, [students, inlineLinkSearchTerm, inlineLinkAcademicYearFilter, inlineLinkClassFilter, inlineLinkSectionFilter]);
+
   // Overview filtered users for card clicks
   const overviewFilteredUsers = useMemo(() => {
     let list = visibleUsers;
@@ -329,13 +351,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
   const handleCardClick = (role) => {
     setOverviewRoleFilter(role);
     setOverviewPage(1);
-    // Scroll to user list section
-    setTimeout(() => {
-      const element = document.getElementById('user-list-section');
-      if (element) {
-        element.scrollIntoView({ behavior: 'smooth' });
-      }
-    }, 100);
+    setActiveTab('detail-list');
   };
 
   // Pagination for main user list
@@ -504,8 +520,8 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
 
   /* ---------- User CRUD ---------- */
   const handleCreateUser = () => {
-    if (!newUser.name || !newUser.number || !newUser.password || !newUser.role) {
-      return showMessage?.('Please fill name, number, password, role', 'error');
+    if (!newUser.name || !newUser.number || !newUser.role) {
+      return showMessage?.('Please fill name, number, role', 'error');
     }
     const normalizedNumber = sanitizePhoneNumber(newUser.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
@@ -520,7 +536,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
       if (newUser.section && !scopedSectionOptions.includes(newUser.section)) 
         return showMessage?.('Only assigned sections are allowed', 'error');
     }
-    if (newUser.role === 'student' && newUser.admissionYear && !scopedYearOptions.includes(newUser.admissionYear)) {
+    if (newUser.role === 'student' && newUser.academicYear && !scopedYearOptions.includes(newUser.academicYear)) {
       return showMessage?.('Only assigned academic years are allowed', 'error');
     }
     if (newUser.role === 'parents') {
@@ -542,15 +558,15 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     u.role = newUser.role; 
     u.name = newUser.name; 
     u.number = normalizedNumber; 
-    u.password = newUser.password;
+    u.password = newUser.password && String(newUser.password).trim() !== '' ? newUser.password : `VSMS@${String(normalizedNumber).slice(-4)}`;
 
-    const updated = [...localUsers, u];
+    const updated = [u, ...localUsers];
     setLocalUsers(updated); 
     saveAllUsers(updated);
     showMessage?.('User created successfully!', 'success');
     setNewUser({ 
       name:'', number:'', password:'', role:'', className:'', section:'', 
-      subject:'', qualification:'', address:'', admissionYear:'', parentName:'', 
+      subject:'', qualification:'', address:'', academicYear:'2026-27', parentName:'', 
       childName:'', childClass:'', childSection:'', relationWithChild:'', designation:'' 
     });
     refreshData();
@@ -590,24 +606,33 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
 
   const handleResetPassword = (user) => {
     setResetPasswordUser(user);
-    setNewPassword('');
     setShowResetModal(true);
   };
 
   const confirmResetPassword = () => {
-    if (!newPassword || newPassword.length < 4) {
-      showMessage?.('Password must be at least 4 characters', 'error');
-      return;
+    if (!resetPasswordUser) return;
+    
+    const originalUser = localUsers.find(u => u.id === resetPasswordUser.id);
+    if (originalUser && originalUser.number) {
+      const numberStr = String(originalUser.number);
+      const last4 = numberStr.slice(-4);
+      const newPassword = `VSMS@${last4}`;
+      
+      const updatedUsers = localUsers.map(u => 
+        u.id === resetPasswordUser.id 
+          ? { ...u, password: newPassword }
+          : u
+      );
+      
+      setLocalUsers(updatedUsers);
+      saveAllUsers(updatedUsers);
+      showMessage?.(`Password reset successful for ${resetPasswordUser.name}!`, "success");
+    } else {
+      showMessage?.("Unable to reset password", "error");
     }
-    const updatedUsers = localUsers.map(u => 
-      u.id === resetPasswordUser.id ? { ...u, password: newPassword } : u
-    );
-    setLocalUsers(updatedUsers);
-    saveAllUsers(updatedUsers);
-    showMessage?.(`Password reset for ${resetPasswordUser.name}`, 'success');
+    
     setShowResetModal(false);
     setResetPasswordUser(null);
-    setNewPassword('');
   };
 
   /* ---------- Parent-Student link ---------- */
@@ -721,7 +746,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
         id: generateId(), 
         name: r.name, 
         number: normalizedNumber, 
-        password: r.password || 'default123',
+        password: r.password && String(r.password).trim() !== '' ? r.password : `VSMS@${String(normalizedNumber).slice(-4)}`,
         role: String(r.role).toLowerCase(), 
         schoolName: myScopeSchool || r.schoolName || '',
         className: classValue, 
@@ -729,7 +754,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
         subject: r.subject || '', 
         qualification: r.qualification || '',
         address: r.address || '', 
-        admissionYear: yearValue,
+        academicYear: yearValue,
         childName: r.childname || r.childName || '', 
         childClass: childClassValue,
         childSection: childSectionValue, 
@@ -739,7 +764,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     if (created.length !== csvData.length) {
       showMessage?.(`Some CSV rows were skipped. ${getPhoneValidationMessage()}`, 'error');
     }
-    const updated = [...localUsers, ...created];
+    const updated = [...created, ...localUsers];
     setLocalUsers(updated); 
     saveAllUsers(updated);
     showMessage?.(`Bulk upload: ${created.length} users`, 'success');
@@ -749,7 +774,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
   };
 
   const downloadSampleCSV = () => {
-    const c = `name,number,password,role,className,section,subject,qualification,address,admissionYear,childName,childClass,childSection,designation
+    const c = `name,number,password,role,className,section,subject,qualification,address,academicYear,childName,childClass,childSection,designation
 John Student,9876543210,123456,student,10,A,,,123 Main St,2026-27,,,,
 Jane Teacher,9876543211,123456,teacher,10,A,Math,B.Ed,,,,,,
 Robert Parent,9876543212,123456,parents,,,,,456 Oak Ave,,John Student,10,A,
@@ -782,26 +807,17 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
       )}
 
       {/* Reset Password Modal */}
-      {showResetModal && resetPasswordUser && (
-        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-          <div className={`rounded-xl p-6 w-96 ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-            <h3 className={`text-lg font-bold mb-3 ${isDarkMode ? 'text-white' : 'text-gray-900'}`}>
-              Reset Password for {resetPasswordUser.name}
-            </h3>
-            <input
-              type="text"
-              value={newPassword}
-              onChange={(e) => setNewPassword(e.target.value)}
-              placeholder="Enter new password"
-              className={`w-full border px-3 py-2 rounded mb-4 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
-            />
-            <div className="flex gap-2">
-              <button onClick={confirmResetPassword} className="bg-blue-600 text-white px-4 py-2 rounded">Reset</button>
-              <button onClick={() => setShowResetModal(false)} className="bg-gray-500 text-white px-4 py-2 rounded">Cancel</button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PasswordResetModal
+        isOpen={showResetModal}
+        onClose={() => {
+          setShowResetModal(false);
+          setResetPasswordUser(null);
+        }}
+        onConfirm={confirmResetPassword}
+        userName={resetPasswordUser?.name}
+        userNumber={resetPasswordUser?.number}
+        isDarkMode={isDarkMode}
+      />
 
       {itemToDelete && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
@@ -871,10 +887,10 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
       )}
 
       {/* Main Layout */}
-      <div className="flex gap-6 p-6">
+      <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
         
         {/* SIDEBAR */}
-        <aside className={`w-80 flex-shrink-0 rounded-2xl shadow-lg flex flex-col ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+        <aside className={`w-80 flex-shrink-0 border-r shadow-lg z-40 flex flex-col h-screen sticky top-0 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
           {/* Profile Section */}
           <div className={`p-5 text-center border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <div className="relative inline-block">
@@ -962,7 +978,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
         </aside>
 
         {/* MAIN CONTENT */}
-        <main className="flex-1 overflow-y-auto min-h-screen">
+        <main className="flex-1 overflow-y-auto p-6 min-h-screen">
           {/* Header */}
           <div className={`mb-4 pb-2 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
@@ -1016,6 +1032,69 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                   </div>
                 </div>
 
+                {/* Attendance Chart */}
+                <div className={`flex items-center gap-3 mb-3 p-3 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-slate-50'}`}>
+                  <label className={`text-sm font-semibold ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Attendance Period:</label>
+                  <select 
+                    value={attendancePeriod} 
+                    onChange={e => setAttendancePeriod(e.target.value)} 
+                    className={`px-3 py-1.5 border rounded bg-white ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                  >
+                    <option value="day">Day-wise</option>
+                    <option value="week">Week-wise</option>
+                    <option value="month">Month-wise</option>
+                    <option value="year">Year-wise</option>
+                  </select>
+                </div>
+                <AnalyticsChart 
+                  title={`Overall Attendance (${attendancePeriod.charAt(0).toUpperCase() + attendancePeriod.slice(1)}-wise)`} 
+                  data={attendanceData} 
+                  xKey="name" 
+                  type="bar" 
+                  series={[
+                    {dataKey:"present", name:"Present", color:"#10b981"},
+                    {dataKey:"absent", name:"Absent", color:"#ef4444"},
+                    {dataKey:"late", name:"Late", color:"#f59e0b"}
+                  ]} 
+                />
+
+                {/* Overview Filters */}
+                <div className={`p-5 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                  <h3 className={`text-lg font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Overview Filters</h3>
+                  <div className="grid gap-3 md:grid-cols-4">
+                    <input 
+                      placeholder="Search by name or phone..." 
+                      value={overviewSearchTerm} 
+                      onChange={e => setOverviewSearchTerm(e.target.value)} 
+                      className={`w-full border rounded px-4 py-2 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                    />
+                    <select 
+                      value={overviewClassFilter} 
+                      onChange={e => setOverviewClassFilter(e.target.value)} 
+                      className={`border rounded px-4 py-2 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                    >
+                      <option value="">All Classes</option>
+                      {scopedClassOptions.map((cls) => <option key={cls} value={cls}>{cls}</option>)}
+                    </select>
+                    <select 
+                      value={overviewSectionFilter} 
+                      onChange={e => setOverviewSectionFilter(e.target.value)} 
+                      className={`border rounded px-4 py-2 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                    >
+                      <option value="">All Sections</option>
+                      {scopedSectionOptions.map((section) => <option key={section} value={section}>{section}</option>)}
+                    </select>
+                    <select 
+                      value={overviewYearFilter} 
+                      onChange={e => setOverviewYearFilter(e.target.value)} 
+                      className={`border rounded px-4 py-2 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                    >
+                      <option value="">All Academic Years</option>
+                      {scopedYearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+                    </select>
+                  </div>
+                </div>
+
                 {/* Dashboard Cards */}
                 <div className="grid gap-4 grid-cols-2 md:grid-cols-2 lg:grid-cols-4">
                   <DashboardCard 
@@ -1052,145 +1131,139 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                   />
                 </div>
 
-                {/* Attendance Chart */}
-                <div className={`flex items-center gap-3 mb-3 p-3 rounded-lg ${isDarkMode ? 'bg-gray-800' : 'bg-slate-50'}`}>
-                  <label className={`text-sm font-semibold ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Attendance Period:</label>
-                  <select 
-                    value={attendancePeriod} 
-                    onChange={e => setAttendancePeriod(e.target.value)} 
-                    className={`px-3 py-1.5 border rounded bg-white ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                  >
-                    <option value="day">Day-wise</option>
-                    <option value="week">Week-wise</option>
-                    <option value="month">Month-wise</option>
-                    <option value="year">Year-wise</option>
-                  </select>
-                </div>
-                <AnalyticsChart 
-                  title={`Overall Attendance (${attendancePeriod.charAt(0).toUpperCase() + attendancePeriod.slice(1)}-wise)`} 
-                  data={attendanceData} 
-                  xKey="name" 
-                  type="bar" 
-                  series={[
-                    {dataKey:"present", name:"Present", color:"#10b981"},
-                    {dataKey:"absent", name:"Absent", color:"#ef4444"},
-                    {dataKey:"late", name:"Late", color:"#f59e0b"}
-                  ]} 
-                />
-
-                {/* Filtered Users List Section */}
-                <div id="user-list-section" className={`p-5 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                      {overviewRoleFilter === 'student' ? 'Students List' : 
-                       overviewRoleFilter === 'teacher' ? 'Teachers List' : 
-                       overviewRoleFilter === 'parents' ? 'Parents List' : 
-                       overviewRoleFilter === 'staff' ? 'Non Teaching Staff List' : 'All Users'}
-                    </h3>
-                    <div className="flex gap-2">
-                      {overviewRoleFilter !== 'all' && (
-                        <button
-                          onClick={() => {
-                            setOverviewRoleFilter('all');
-                            setOverviewPage(1);
-                          }}
-                          className={`px-3 py-1 text-sm rounded ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
-                        >
-                          ← Back to All
-                        </button>
+                {/* Search Results List */}
+                {overviewSearchTerm && (
+                  <div className={`mt-6 p-4 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white border border-gray-200'}`}>
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                        Search Results ({overviewFilteredUsers.length} users found)
+                      </h3>
+                    </div>
+                    <div className="space-y-2">
+                      {overviewFilteredUsers.slice(0, 50).map((user) => (
+                        <div key={user.id} className={`flex justify-between items-center p-3 rounded-lg border ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}>
+                          <div className="flex items-center gap-3">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${isDarkMode ? 'bg-blue-900 text-white' : 'bg-blue-100 text-blue-700'}`}>
+                              {user.name?.charAt(0)?.toUpperCase() || 'U'}
+                            </div>
+                            <div>
+                              <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{user.name}</p>
+                              <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                {user.role?.toUpperCase()} | {user.number}
+                                {user.className && ` | Class: ${user.className}`}
+                                {user.section && ` | Section: ${user.section}`}
+                                {user.subject && ` | Subject: ${user.subject}`}
+                                {user.designation && ` | Designation: ${user.designation}`}
+                                {user.childName && ` | Child: ${user.childName}`}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="flex gap-2 text-sm">
+                            <button onClick={() => handleEditUser(user)} className="px-3 py-1 border border-blue-500 text-blue-600 rounded hover:bg-blue-50 dark:hover:bg-blue-900">Edit</button>
+                            <button onClick={() => handleResetPassword(user)} className="px-3 py-1 border border-yellow-500 text-yellow-600 rounded hover:bg-yellow-50 dark:hover:bg-yellow-900">Reset</button>
+                            <button onClick={() => handleDeleteUser(user.id)} className="px-3 py-1 border border-red-500 text-red-600 rounded hover:bg-red-50 dark:hover:bg-red-900">Delete</button>
+                          </div>
+                        </div>
+                      ))}
+                      {overviewFilteredUsers.length > 50 && (
+                        <p className={`text-center text-sm py-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          Showing top 50 results. Please refine your search.
+                        </p>
                       )}
-                      <span className={`text-xs px-2 py-1 rounded-full ${isDarkMode ? 'bg-blue-900 text-blue-200' : 'bg-blue-100 text-blue-800'}`}>
-                        Total: {overviewFilteredUsers.length}
-                      </span>
+                      {overviewFilteredUsers.length === 0 && (
+                        <p className={`text-center text-sm py-4 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                          No users found matching your search.
+                        </p>
+                      )}
                     </div>
                   </div>
+                )}
+              </div>
+            )}
 
-                  {/* Users List */}
-                  <div className="space-y-2 max-h-[600px] overflow-y-auto">
-                    {overviewPaginatedUsers.map(u => (
-                      <div key={u.id} className={`flex justify-between items-center p-3 border rounded hover:bg-slate-50 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : ''}`}>
-                        <div>
-                          <p className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
-                            {u.name}
-                            <span className={`text-xs ml-2 px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-gray-600 text-gray-300' : 'bg-slate-100 text-slate-700'} capitalize`}>
-                              {u.role}
-                            </span>
+            {/* DETAIL LIST TAB */}
+            {activeTab === 'detail-list' && (
+              <div id="user-list-section" className={`p-5 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                <div className="flex justify-between items-center mb-4">
+                  <h3 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                    {overviewRoleFilter === 'student' ? 'Students List' : 
+                     overviewRoleFilter === 'teacher' ? 'Teachers List' : 
+                     overviewRoleFilter === 'parents' ? 'Parents List' : 
+                     overviewRoleFilter === 'staff' ? 'Non Teaching Staff List' : 'All Users'}
+                  </h3>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => {
+                        setOverviewRoleFilter('all');
+                        setOverviewPage(1);
+                        setActiveTab('overview');
+                      }}
+                      className={`px-3 py-1 text-sm rounded ${isDarkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}
+                    >
+                      ← Back to Dashboard
+                    </button>
+                    <span className={`text-xs px-2 py-1 rounded-full ${isDarkMode ? 'bg-blue-900 text-blue-200' : 'bg-blue-100 text-blue-800'}`}>
+                      Total: {overviewFilteredUsers.length}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Users List */}
+                <div className="space-y-2">
+                  {overviewPaginatedUsers.map(u => (
+                    <div key={u.id} className={`flex justify-between items-center p-3 border rounded hover:bg-slate-50 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : ''}`}>
+                      <div>
+                        <p className={`font-bold text-sm ${isDarkMode ? 'text-white' : 'text-slate-800'}`}>
+                          {u.name}
+                          <span className={`text-xs ml-2 px-2 py-0.5 rounded-full ${isDarkMode ? 'bg-gray-600 text-gray-300' : 'bg-slate-100 text-slate-700'} capitalize`}>
+                            {u.role}
+                          </span>
+                        </p>
+                        <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>Phone: {u.number}</p>
+                        {(u.className || u.section || u.academicYear) && (
+                          <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>
+                            {u.className && `Class: ${u.className} `}
+                            {(u.section || u.sec) && `| Section: ${u.section || u.sec} `}
+                            {(u.academicYear || u.admissionYear) && `| Year: ${u.academicYear || u.admissionYear}`}
                           </p>
-                          <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>Phone: {u.number}</p>
-                          {(u.className || u.section || u.academicYear) && (
-                            <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>
-                              {u.className && `Class: ${u.className} `}
-                              {(u.section || u.sec) && `| Section: ${u.section || u.sec} `}
-                              {(u.academicYear || u.admissionYear) && `| Year: ${u.academicYear || u.admissionYear}`}
-                            </p>
-                          )}
-                        </div>
-                        <div className="flex gap-2 text-sm">
-                          <button onClick={() => handleEditUser(u)} className="px-3 py-1 border border-blue-500 text-blue-600 rounded">Edit</button>
-                          <button onClick={() => handleResetPassword(u)} className="px-3 py-1 border border-yellow-500 text-yellow-600 rounded">Reset Password</button>
-                          <button onClick={() => handleDeleteUser(u.id)} className="px-3 py-1 border border-red-500 text-red-600 rounded">Delete</button>
-                        </div>
+                        )}
                       </div>
-                    ))}
-                    {overviewFilteredUsers.length === 0 && (
-                      <p className={`text-center text-sm py-6 ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>
-                        No users found.
-                      </p>
-                    )}
-                  </div>
-
-                  {/* Pagination Controls */}
-                  {overviewTotalPages > 1 && (
-                    <div className="flex justify-between items-center mt-6 pt-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Rows per page:</span>
-                        <select
-                          value={usersPerPage}
-                          onChange={(e) => {
-                            setUsersPerPage(Number(e.target.value));
-                            setOverviewPage(1);
-                          }}
-                          className={`px-2 py-1 border rounded text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                        >
-                          <option value={25}>25</option>
-                          <option value={50}>50</option>
-                          <option value={100}>100</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          Page {overviewPage} of {overviewTotalPages}
-                        </span>
-                        <button
-                          onClick={() => setOverviewPage(prev => Math.max(1, prev - 1))}
-                          disabled={overviewPage === 1}
-                          className={`px-3 py-1 border rounded text-sm transition-colors ${
-                            overviewPage === 1 
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : isDarkMode 
-                                ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          Previous
-                        </button>
-                        <button
-                          onClick={() => setOverviewPage(prev => Math.min(overviewTotalPages, prev + 1))}
-                          disabled={overviewPage === overviewTotalPages}
-                          className={`px-3 py-1 border rounded text-sm transition-colors ${
-                            overviewPage === overviewTotalPages 
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : isDarkMode 
-                                ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          Next
-                        </button>
+                      <div className="flex gap-2 text-sm">
+                        <button onClick={() => handleEditUser(u)} className="px-3 py-1 border border-blue-500 text-blue-600 rounded">Edit</button>
+                        <button onClick={() => handleResetPassword(u)} className="px-3 py-1 border border-yellow-500 text-yellow-600 rounded">Reset Password</button>
+                        <button onClick={() => handleDeleteUser(u.id)} className="px-3 py-1 border border-red-500 text-red-600 rounded">Delete</button>
                       </div>
                     </div>
+                  ))}
+                  {overviewFilteredUsers.length === 0 && (
+                    <p className={`text-center text-sm py-6 ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>
+                      No users found.
+                    </p>
                   )}
                 </div>
+
+                {/* Pagination Controls */}
+                {overviewTotalPages > 1 && (
+                  <div className="flex justify-center gap-2 mt-4 pt-3 border-t">
+                    <button
+                      onClick={() => setOverviewPage(p => Math.max(1, p - 1))}
+                      disabled={overviewPage === 1}
+                      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
+                    >
+                      Previous
+                    </button>
+                    <span className="px-3 py-1 text-sm text-gray-600">
+                      Page {overviewPage} of {overviewTotalPages}
+                    </span>
+                    <button
+                      onClick={() => setOverviewPage(p => Math.min(overviewTotalPages, p + 1))}
+                      disabled={overviewPage === overviewTotalPages}
+                      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
+                    >
+                      Next
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1200,23 +1273,58 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                 {/* Create User Form */}
                 <div className={`p-5 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                   <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Create New User Account</h2>
+                  {/* Step 1: Admin Assigned Rights Display */}
+                  <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50">
+                    <h3 className={`font-semibold mb-3 text-blue-800`}>Your Assigned Access Rights</h3>
+                    <div className="grid gap-4 md:grid-cols-4">
+                      {/* Academic Year */}
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Academic Years</label>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {assignedYears.length > 0 ? assignedYears.map(year => (
+                            <span key={year} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{year}</span>
+                          )) : <span className="text-sm text-gray-500">All</span>}
+                        </div>
+                      </div>
+
+                      {/* Board */}
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Boards</label>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {assignedBoards.length > 0 ? assignedBoards.map(board => (
+                            <span key={board} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{board}</span>
+                          )) : <span className="text-sm text-gray-500">All</span>}
+                        </div>
+                      </div>
+
+                      {/* Class */}
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Classes</label>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {assignedClasses.length > 0 ? assignedClasses.map(cls => (
+                            <span key={cls} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{cls}</span>
+                          )) : <span className="text-sm text-gray-500">All</span>}
+                        </div>
+                      </div>
+
+                      {/* Section */}
+                      <div>
+                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Sections</label>
+                        <div className="mt-2 flex flex-wrap gap-1">
+                          {assignedSections.length > 0 ? assignedSections.map(sec => (
+                            <span key={sec} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{sec}</span>
+                          )) : <span className="text-sm text-gray-500">All</span>}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    <select 
-                      value={newUser.role} 
-                      onChange={e => setNewUser({...newUser, role: e.target.value})} 
-                      className={`px-3 py-2 border rounded col-span-full font-medium ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                    >
-                      <option value="">Select Role First *</option>
-                      <option value="teacher">Teacher</option>
-                      <option value="student">Student</option>
-                      <option value="parents">Parent</option>
-                      <option value="staff">Non teaching Staff</option>
-                    </select>
                     <input 
                       placeholder="Full Name *" 
                       value={newUser.name} 
                       onChange={e => setNewUser({...newUser, name: e.target.value})} 
-                      className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                      className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                     />
                     <input 
                       placeholder="Phone Number *" 
@@ -1224,15 +1332,15 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                       onChange={e => setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)})} 
                       inputMode="numeric" 
                       maxLength={10} 
-                      className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                      className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                     />
                     <div className="relative">
                       <input 
                         type={showPassword ? "text" : "password"} 
-                        placeholder="Password *" 
+                        placeholder="Password (leave blank for default)" 
                         value={newUser.password} 
                         onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                        className={`px-3 py-2 pr-10 border rounded w-full ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 pr-10 border rounded-lg w-full text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                       <button 
                         type="button" 
@@ -1242,38 +1350,33 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                         {showPassword ? "🙈" : "👁️"}
                       </button>
                     </div>
+                    <select 
+                      value={newUser.role} 
+                      onChange={e => setNewUser({...newUser, role: e.target.value})} 
+                      className={`px-3 py-2 border rounded-lg col-span-full font-medium text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                    >
+                      <option value="">Select Role *</option>
+                      <option value="teacher">Teacher</option>
+                      <option value="student">Student</option>
+                      <option value="parents">Parent</option>
+                      <option value="staff">Non teaching Staff</option>
+                    </select>
                   </div>
 
                   {/* role-specific fields */}
                   {newUser.role === 'teacher' && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-4">
-                      <select 
-                        value={newUser.className} 
-                        onChange={e => setNewUser({...newUser, className: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                      >
-                        <option value="">Select Class</option>
-                        {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <select 
-                        value={newUser.section} 
-                        onChange={e => setNewUser({...newUser, section: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                      >
-                        <option value="">Select Section</option>
-                        {scopedSectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
+                    <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <input 
                         placeholder="Subject" 
                         value={newUser.subject} 
                         onChange={e => setNewUser({...newUser, subject: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                       <input 
                         placeholder="Qualification" 
                         value={newUser.qualification} 
                         onChange={e => setNewUser({...newUser, qualification: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                     </div>
                   )}
@@ -1282,7 +1385,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                       <select 
                         value={newUser.className} 
                         onChange={e => setNewUser({...newUser, className: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
                       >
                         <option value="">Select Class</option>
                         {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1290,15 +1393,15 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                       <select 
                         value={newUser.section} 
                         onChange={e => setNewUser({...newUser, section: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
                       >
                         <option value="">Select Section</option>
                         {scopedSectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
                       </select>
                       <select 
-                        value={newUser.admissionYear} 
-                        onChange={e => setNewUser({...newUser, admissionYear: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                        value={newUser.academicYear} 
+                        onChange={e => setNewUser({...newUser, academicYear: e.target.value})} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
                       >
                         <option value="">Academic Year</option>
                         {scopedYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
@@ -1307,13 +1410,13 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                         placeholder="Address" 
                         value={newUser.address} 
                         onChange={e => setNewUser({...newUser, address: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                       <input 
                         placeholder="Parent Name" 
                         value={newUser.parentName} 
                         onChange={e => setNewUser({...newUser, parentName: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                     </div>
                   )}
@@ -1323,18 +1426,18 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                         placeholder="Address" 
                         value={newUser.address} 
                         onChange={e => setNewUser({...newUser, address: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                       <input 
                         placeholder="Child Name" 
                         value={newUser.childName} 
                         onChange={e => setNewUser({...newUser, childName: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                       <select 
                         value={newUser.childClass} 
                         onChange={e => setNewUser({...newUser, childClass: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
                       >
                         <option value="">Child Class</option>
                         {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
@@ -1342,7 +1445,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                       <select 
                         value={newUser.childSection} 
                         onChange={e => setNewUser({...newUser, childSection: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
                       >
                         <option value="">Child Section</option>
                         {scopedSectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
@@ -1351,7 +1454,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                         placeholder="Relation" 
                         value={newUser.relationWithChild} 
                         onChange={e => setNewUser({...newUser, relationWithChild: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                     </div>
                   )}
@@ -1361,105 +1464,107 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                         placeholder="Qualification" 
                         value={newUser.qualification} 
                         onChange={e => setNewUser({...newUser, qualification: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                       <input 
                         placeholder="Designation" 
                         value={newUser.designation} 
                         onChange={e => setNewUser({...newUser, designation: e.target.value})} 
-                        className={`px-3 py-2 border rounded ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
+                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
                     </div>
                   )}
 
-                  {/* ADD + REMOVE chips */}
-                  <div className="mt-5 space-y-3">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className={`text-sm font-semibold ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Classes</label>
-                        {!assignedClasses.length && <button onClick={() => setShowAddClass(true)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">+ Add Class</button>}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {scopedClassOptions.map(c => (
-                          <span key={c} className={`inline-flex items-center gap-1 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-xs ${isDarkMode ? 'bg-blue-900 border-blue-700 text-white' : ''}`}>
-                            {c} {!assignedClasses.length && <button onClick={() => askDelete("class", c)} className="text-red-600 hover:text-red-800 font-bold ml-1">×</button>}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className={`text-sm font-semibold ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Sections</label>
-                        {!assignedSections.length && <button onClick={() => setShowAddSection(true)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">+ Add Section</button>}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {scopedSectionOptions.map(s => (
-                          <span key={s} className={`inline-flex items-center gap-1 px-3 py-1 rounded-full bg-green-50 border border-green-200 text-xs ${isDarkMode ? 'bg-green-900 border-green-700 text-white' : ''}`}>
-                            {s} {!assignedSections.length && <button onClick={() => askDelete("section", s)} className="text-red-600 hover:text-red-800 font-bold ml-1">×</button>}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className={`text-sm font-semibold ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Academic Years</label>
-                        {!assignedYears.length && <button onClick={() => setShowAddYear(true)} className="px-2 py-1 bg-green-600 text-white rounded text-xs">+ Add Year</button>}
-                      </div>
-                      <div className="flex flex-wrap gap-2">
-                        {scopedYearOptions.map(y => (
-                          <span key={y} className={`inline-flex items-center gap-1 px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-xs ${isDarkMode ? 'bg-purple-900 border-purple-700 text-white' : ''}`}>
-                            {y} {!assignedYears.length && <button onClick={() => askDelete("year", y)} className="text-red-600 hover:text-red-800 font-bold ml-1">×</button>}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Parent-Student Linking */}
                   <div className={`mt-5 border rounded-lg p-3 ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-slate-50 border-slate-200'}`}>
                     <h3 className={`text-sm font-bold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Parent-Student Linking</h3>
-                    <div className="flex gap-2 flex-wrap items-center">
-                      <select 
-                        value={inlineLinkStudent} 
-                        onChange={e => setInlineLinkStudent(e.target.value)} 
-                        className={`flex-1 min-w-[180px] px-3 py-2 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-slate-300'}`}
-                      >
-                        <option value="">Select Student</option>
-                        {students.map(s => <option key={s.id} value={s.id}>{s.name} - {s.className} {s.section} - {s.schoolName}</option>)}
+                    <div className='grid gap-2 md:grid-cols-2 xl:grid-cols-4 mb-3'>
+                      <input
+                        type="text"
+                        value={inlineLinkSearchTerm}
+                        onChange={(e) => setInlineLinkSearchTerm(e.target.value)}
+                        placeholder="Search student by name, number, class..."
+                        className={`px-3 py-2 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white placeholder-gray-300' : 'border-gray-300'}`}
+                      />
+                      <select value={inlineLinkAcademicYearFilter} onChange={(e) => setInlineLinkAcademicYearFilter(e.target.value)} className={`px-3 py-2 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
+                        <option value=''>All Academic Years</option>
+                        {scopedYearOptions.map(year => <option key={year} value={year}>{year}</option>)}
                       </select>
-                      <span>↔</span>
-                      <select 
-                        value={inlineLinkParent} 
-                        onChange={e => setInlineLinkParent(e.target.value)} 
-                        className={`flex-1 min-w-[180px] px-3 py-2 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-slate-300'}`}
-                      >
-                        <option value="">Select Parent</option>
-                        {parents.map(p => <option key={p.id} value={p.id}>{p.name} - {p.schoolName}</option>)}
+                      <select value={inlineLinkClassFilter} onChange={(e) => setInlineLinkClassFilter(e.target.value)} className={`px-3 py-2 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
+                        <option value=''>All Classes</option>
+                        {scopedClassOptions.map(cls => <option key={cls} value={cls}>{cls}</option>)}
                       </select>
-                      <button 
-                        onClick={() => handleLinkStudent(inlineLinkStudent, inlineLinkParent)} 
-                        className="bg-blue-600 text-white px-4 py-2 text-sm rounded hover:bg-blue-700"
-                      >
-                        Link
-                      </button>
+                      <select value={inlineLinkSectionFilter} onChange={(e) => setInlineLinkSectionFilter(e.target.value)} className={`px-3 py-2 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
+                        <option value=''>All Sections</option>
+                        {scopedSectionOptions.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                      </select>
                     </div>
+                    <div className='flex gap-2 flex-wrap items-center'>
+                      <select value={inlineLinkStudent} onChange={(e) => setInlineLinkStudent(e.target.value)} className={`flex-1 min-w-[150px] px-2 py-1.5 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
+                        <option value=''>Select Student</option>
+                        {filteredInlineLinkStudents.map(s => <option key={s.id} value={s.id}>{s.name} - {s.className} {s.section} ({s.academicYear || 'No Year'})</option>)}
+                      </select>
+                      <span className='text-gray-400'>→</span>
+                      <select value={inlineLinkParent} onChange={(e) => setInlineLinkParent(e.target.value)} className={`flex-1 min-w-[150px] px-2 py-1.5 text-sm border rounded ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
+                        <option value=''>Select Parent</option>
+                        {parents.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                      </select>
+                      <button onClick={() => handleLinkStudent(inlineLinkStudent, inlineLinkParent)} className='bg-blue-600 text-white px-3 py-1.5 text-sm rounded hover:bg-blue-700'>Link</button>
+                    </div>
+                    <p className={`mt-2 text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                      Showing {filteredInlineLinkStudents.length} student{filteredInlineLinkStudents.length === 1 ? '' : 's'} for linking.
+                    </p>
                   </div>
 
-                  <div className="mt-5 flex flex-wrap gap-3 items-center">
-                    <button onClick={handleCreateUser} className="bg-blue-600 text-white px-6 py-2 rounded hover:bg-blue-700">Create User</button>
-                    <input type="file" accept=".csv" onChange={handleCsvUpload} className="text-sm" />
-                    <button onClick={downloadSampleCSV} className="px-4 py-2 bg-emerald-500 text-white rounded text-sm">⬇️ Sample CSV</button>
-                    {csvData.length > 0 && 
-                      <button onClick={processBulkUpload} disabled={isProcessingCsv} className="px-4 py-2 bg-emerald-600 text-white rounded">
-                        {isProcessingCsv ? "Uploading…" : `Import ${csvData.length} rows`}
-                      </button>
-                    }
+                  <div className="mt-4">
+                    <button onClick={handleCreateUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Create User</button>
                   </div>
-                  {csvErrors.length > 0 && 
-                    <div className="mt-3 text-red-700 text-xs">
-                      {csvErrors.map((e,i) => <p key={i}>• {e}</p>)}
+
+                  {/* CSV Upload */}
+                  <div className="mt-4 p-3 bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg border-2 border-dashed border-emerald-200">
+                    <h3 className="text-sm font-bold text-emerald-800 mb-1">📁 Bulk Upload Users via CSV</h3>
+                    <p className="text-xs text-gray-600 mb-2">Required fields: <b>name, number, password, role</b></p>
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="relative">
+                          <input 
+                            type="file" 
+                            accept=".csv" 
+                            onChange={handleCsvUpload}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            id="csv-file-input"
+                          />
+                          <button 
+                            className="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 cursor-pointer"
+                          >
+                            📁 Choose File
+                          </button>
+                        </div>
+                        <span className="text-xs text-gray-500">
+                          {csvData.length > 0 ? `${csvData.length} file(s) selected` : "No file chosen"}
+                        </span>
+                        <button onClick={() => { setCsvData([]); setCsvErrors([]); }} className="px-2 py-1 bg-red-500 rounded text-xs text-white">Clear</button>
+                        <button onClick={downloadSampleCSV} className="px-2 py-1 bg-blue-500 text-white rounded text-xs">⬇️ Sample CSV</button>
+                      </div>
+                      
+                      {csvData.length > 0 && (
+                        <div className="flex items-center justify-between p-2 bg-white rounded">
+                          <span className="text-xs font-semibold text-emerald-800">{csvData.length} rows parsed</span>
+                          <button onClick={processBulkUpload} disabled={isProcessingCsv || csvErrors.length > 0} className="px-2 py-1 bg-emerald-600 text-white rounded text-xs disabled:opacity-50">
+                            {isProcessingCsv ? 'Uploading...' : 'Upload CSV'}
+                          </button>
+                        </div>
+                      )}
+                      
+                      {csvErrors.length > 0 && (
+                        <div className="p-2 bg-red-50 rounded">
+                          <ul className="text-xs text-red-800">
+                            {csvErrors.slice(0, 3).map((e, i) => <li key={i}>• {e}</li>)}
+                          </ul>
+                        </div>
+                      )}
                     </div>
-                  }
+                  </div>
                 </div>
 
                 {/* Users List with Pagination */}
@@ -1570,7 +1675,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                   </div>
 
                   {/* Users List */}
-                  <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                  <div className="space-y-2">
                     {paginatedUsers.map(u => (
                       <div key={u.id} className={`flex justify-between items-center p-3 border rounded hover:bg-slate-50 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : ''}`}>
                         <div>
@@ -1617,53 +1722,24 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
 
                   {/* Pagination Controls */}
                   {totalPages > 1 && (
-                    <div className="flex justify-between items-center mt-6 pt-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}">
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Rows per page:</span>
-                        <select
-                          value={usersPerPage}
-                          onChange={(e) => {
-                            setUsersPerPage(Number(e.target.value));
-                            setCurrentPage(1);
-                          }}
-                          className={`px-2 py-1 border rounded text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                        >
-                          <option value={25}>25</option>
-                          <option value={50}>50</option>
-                          <option value={100}>100</option>
-                        </select>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>
-                          Page {currentPage} of {totalPages}
-                        </span>
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                          disabled={currentPage === 1}
-                          className={`px-3 py-1 border rounded text-sm transition-colors ${
-                            currentPage === 1 
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : isDarkMode 
-                                ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          Previous
-                        </button>
-                        <button
-                          onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                          disabled={currentPage === totalPages}
-                          className={`px-3 py-1 border rounded text-sm transition-colors ${
-                            currentPage === totalPages 
-                              ? 'opacity-50 cursor-not-allowed' 
-                              : isDarkMode 
-                                ? 'border-gray-600 text-gray-300 hover:bg-gray-700' 
-                                : 'border-gray-300 text-gray-700 hover:bg-gray-50'
-                          }`}
-                        >
-                          Next
-                        </button>
-                      </div>
+                    <div className="flex justify-center gap-2 mt-4 pt-3 border-t">
+                      <button
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
+                      >
+                        Previous
+                      </button>
+                      <span className="px-3 py-1 text-sm text-gray-600">
+                        Page {currentPage} of {totalPages}
+                      </span>
+                      <button
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
+                      >
+                        Next
+                      </button>
                     </div>
                   )}
                 </div>

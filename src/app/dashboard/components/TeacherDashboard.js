@@ -40,6 +40,52 @@ const sortLatestFirst = (items = []) => [...items].sort((a, b) => getLatestTimes
 
 export default function TeacherDashboard({ user, allUsers: propUsers, showMessage, loadData }) {
   const [activeTab, setActiveTab] = useState('overview');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [profilePhoto, setProfilePhoto] = useState(user?.profilePhoto || '');
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('school_theme');
+    if (savedTheme === 'dark') {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDarkMode;
+    setIsDarkMode(newTheme);
+    if (newTheme) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('school_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('school_theme', 'light');
+    }
+  };
+
+  const handleProfilePhotoChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        setProfilePhoto(reader.result);
+        const updatedUsers = allUsers.map(u => u.id === user.id ? { ...u, profilePhoto: reader.result } : u);
+        setAllUsers(updatedUsers);
+        saveLocalData(STORAGE_KEYS.USERS, updatedUsers);
+        if(showMessage) showMessage('Profile photo updated successfully!', 'success');
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveProfilePhoto = () => {
+    setProfilePhoto('');
+    const updatedUsers = allUsers.map(u => u.id === user.id ? { ...u, profilePhoto: '' } : u);
+    setAllUsers(updatedUsers);
+    saveLocalData(STORAGE_KEYS.USERS, updatedUsers);
+    if(showMessage) showMessage('Profile photo removed successfully!', 'success');
+  };
+
   const [homework, setHomework] = useState({ 
     title: '', description: '', dueDate: '', 
     attachmentUrl: '', attachmentName: '', attachmentType: '',
@@ -696,42 +742,88 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-6 grid gap-6 lg:grid-cols-[260px_1fr]">
-      <aside className="rounded-2xl border border-slate-200/50 bg-gradient-to-b from-slate-50 to-blue-50 p-6 shadow-xl backdrop-blur-sm h-fit lg:sticky lg:top-24 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto">
+    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
+      <aside className={`w-80 flex-shrink-0 border-r shadow-lg z-40 flex flex-col h-screen sticky top-0 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         
         {/* Profile Info in Sidebar */}
-        <div className="mb-6 pb-4 border-b border-blue-200">
-          <h3 className="text-xl font-bold text-gray-800">{user?.name || 'Teacher'}</h3>
-          <p className="text-sm font-semibold text-blue-600">Teacher</p>
-          <p className="text-xs text-gray-500 mt-1">{user?.number}</p>
+        <div className={`mb-6 pb-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-blue-200'}`}>
+          <div className="relative inline-block mt-4 mb-3 text-center w-full">
+            {profilePhoto ? (
+              <img src={profilePhoto} alt={user.name} className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg mx-auto" />
+            ) : (
+              <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center text-3xl font-bold border-3 border-blue-500 ${isDarkMode ? 'bg-gray-700 text-white' : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'}`}>
+                👩‍🏫
+              </div>
+            )}
+            <label className="absolute bottom-0 right-[25%] lg:right-[35%] bg-blue-600 rounded-full p-1.5 cursor-pointer hover:bg-blue-700 transition shadow-md">
+              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <input type="file" accept="image/*" onChange={handleProfilePhotoChange} className="hidden" />
+            </label>
+          </div>
+          {profilePhoto && (
+            <button onClick={handleRemoveProfilePhoto} className="mt-1 text-xs text-red-500 hover:text-red-700 transition block mx-auto mb-3">
+              Remove Photo
+            </button>
+          )}
+
+          <h3 className={`text-xl font-bold text-center ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{user?.name || 'Teacher'}</h3>
+          <p className="text-sm font-semibold text-blue-600 text-center">Teacher</p>
+          <p className={`text-xs text-center mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.number}</p>
           
           {user?.schoolName && (
-            <p className="text-xs font-semibold text-gray-700 mt-2">🏫 {user.schoolName}</p>
+            <p className={`text-xs font-semibold text-center mt-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>🏫 {user.schoolName}</p>
           )}
-          <p className="text-xs font-semibold text-gray-600 mt-1">📚 Board: {user?.board || 'N/A'}</p>
+          <p className={`text-xs font-semibold text-center mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>📚 Board: {user?.board || 'N/A'}</p>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className={`mt-4 w-full py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all duration-300 ${isDarkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600 border border-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200'}`}
+          >
+            {isDarkMode ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                Light Mode
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                Dark Mode
+              </>
+            )}
+          </button>
+        </div>
+        
+        {/* Navigation Menu */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className={`text-xs font-semibold uppercase tracking-wider mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
+          <div className="space-y-1">
+            {navButtons.map((btn) => (
+              <button
+                key={btn.tab}
+                onClick={() => setActiveTab(btn.tab)}
+                className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === btn.tab ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
+              >
+                {btn.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent mb-6 pb-3 border-b border-blue-200">Quick Actions</h3>
-        <div className="space-y-2">
-          {navButtons.map((btn) => (
-            <button
-              key={btn.tab}
-              type="button"
-              onClick={() => setActiveTab(btn.tab)}
-              className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 shadow-sm border ${
-                activeTab === btn.tab
-                  ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-300/50 border-blue-400 hover:shadow-blue-400/70'
-                  : 'bg-white/70 hover:bg-white border-slate-200/50 hover:border-blue-300/50 hover:shadow-md text-slate-800 hover:text-blue-700 font-medium'
-              }`}
-            >
-              <span className="text-sm font-semibold">{btn.label}</span>
-            </button>
-          ))}
+        {/* Logout Button */}
+        <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
+            Logout
+          </button>
         </div>
       </aside>
 
-      <div>
-        <div className="mb-8 border-b-2 border-slate-200/50 pb-4">
+      {/* MAIN CONTENT */}
+      <main className="flex-1 overflow-y-auto p-6 min-h-screen">
+        <div className={`mb-8 border-b-2 ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}/50 pb-4`}>
           <nav className="flex flex-wrap gap-4">
             {navButtons.map((btn) => (
               <button
@@ -754,7 +846,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
           {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
             <>
-              <div className='bg-white p-6 rounded-lg border border-blue-200'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Overview Filters</h2>
                 <div className='grid gap-3 md:grid-cols-2'>
                   <select value={overviewFilterClass} onChange={(e) => setOverviewFilterClass(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
@@ -768,7 +860,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-blue-200 mt-6'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-2'>
                   Homework Status by Student ({teacherSubject})
                 </h2>
@@ -799,7 +891,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-blue-200 mt-6'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Parent-Child Connections</h2>
                 <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4 mb-4'>
                   <input
@@ -866,7 +958,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-blue-200 mt-6'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Homework Assignments</h2>
                 <div className='space-y-3'>
                   {overviewFilteredHomework.length === 0 ? (
@@ -876,7 +968,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                       <div>
                         <p className='font-semibold'>{hw.title}</p>
                         <p className='text-sm text-blue-800'>Due: {hw.dueDate} | Class: {hw.className || 'N/A'} | Section: {hw.section || 'N/A'}</p>
-                        <p className='text-sm text-slate-700 mt-1'>{hw.description}</p>
+                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mt-1`}>{hw.description}</p>
                         {renderFilePreview(hw.attachmentUrl, hw.attachmentName, hw.attachmentType)}
                       </div>
                     </div>
@@ -884,7 +976,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-blue-200 mt-6'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Study Materials</h2>
                 <div className='space-y-3'>
                   {overviewFilteredMaterials.length === 0 ? (
@@ -894,7 +986,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                       <div>
                         <p className='font-semibold text-blue-900'>{mat.title} <span className='text-xs text-blue-700'>({mat.type})</span></p>
                         <p className='text-sm text-blue-800'>Class: {mat.className || 'N/A'} | Section: {mat.section || 'N/A'}</p>
-                        <p className='text-sm text-slate-700 mt-1'>{mat.description}</p>
+                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mt-1`}>{mat.description}</p>
                         {renderFilePreview(mat.url, mat.fileName, mat.type)}
                       </div>
                     </div>
@@ -907,8 +999,8 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
           {/* HOMEWORK TAB */}
           {activeTab === 'homework' && (
             <div className='space-y-6'>
-              <div className='bg-white p-6 rounded-lg border border-slate-200'>
-                <h2 className='text-lg font-semibold text-slate-900 mb-4'>Assign Homework</h2>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Assign Homework</h2>
                 <div className='space-y-4'>
                   <div className='grid gap-3 md:grid-cols-2'>
                     <select 
@@ -985,8 +1077,8 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-slate-200'>
-                <h2 className='text-lg font-semibold text-slate-900 mb-4'>Manage Homework</h2>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Manage Homework</h2>
                 <div className='grid gap-3 md:grid-cols-2 mb-4'>
                   <select value={homeworkFilterClass} onChange={(e) => setHomeworkFilterClass(e.target.value)} className='px-3 py-2 border border-slate-300 rounded-md'>
                     <option value=''>Filter by Class</option>
@@ -1000,9 +1092,9 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 
                 <div className='space-y-3'>
                   {tabFilteredHomework.length === 0 ? (
-                    <p className='text-slate-700'>No homework found.</p>
+                    <p className={`${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>No homework found.</p>
                   ) : tabFilteredHomework.map((hw) => (
-                    <div key={hw.id} className='border border-slate-200 rounded p-3'>
+                    <div key={hw.id} className={`border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} rounded p-3`}>
                       {editHomeworkId === hw.id ? (
                         <div className='space-y-2'>
                           <input value={editHomework.title} onChange={(e) => setEditHomework({ ...editHomework, title: e.target.value })} className='w-full px-3 py-2 border border-slate-300 rounded-md' />
@@ -1028,7 +1120,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                           <div className='flex items-center justify-between gap-3'>
                             <div className='flex-1'>
                               <p className='font-semibold'>{hw.title}</p>
-                              <p className='text-sm text-slate-700'>Due: {hw.dueDate} | Class: {hw.className || 'N/A'} | Section: {hw.section || 'N/A'}</p>
+                              <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Due: {hw.dueDate} | Class: {hw.className || 'N/A'} | Section: {hw.section || 'N/A'}</p>
                               <p className='text-sm text-slate-600 mt-1'>{hw.description}</p>
                               {renderFilePreview(hw.attachmentUrl, hw.attachmentName, hw.attachmentType)}
                             </div>
@@ -1045,14 +1137,14 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                               ) : (
                                 <div className='space-y-2'>
                                   {(hw.submissions || []).map((sub) => (
-                                    <div key={sub.studentId} className='bg-white border border-green-200 rounded p-2'>
+                                    <div key={sub.studentId} className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} border border-green-200 rounded p-2`}>
                                       <p className='text-sm font-semibold text-slate-800'>{sub.studentName}</p>
-                                      <p className='text-sm text-slate-700 mt-1'>Original: {sub.submission}</p>
+                                      <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mt-1`}>Original: {sub.submission}</p>
                                       {sub.correctedSubmission && (
                                         <p className='text-sm mt-1 text-red-600 font-semibold'>Corrected: {sub.correctedSubmission}</p>
                                       )}
                                       {sub.teacherFeedback && (
-                                        <p className='text-xs text-slate-700 mt-1'>Feedback: {sub.teacherFeedback}</p>
+                                        <p className={`text-xs ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mt-1`}>Feedback: {sub.teacherFeedback}</p>
                                       )}
                                       {reviewingSubmission.homeworkId === hw.id && reviewingSubmission.studentId === sub.studentId ? (
                                         <div className='mt-2 space-y-2'>
@@ -1116,7 +1208,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
           {/* ATTENDANCE TAB */}
           {activeTab === 'attendance' && (
             <div className='space-y-6'>
-              <div className='bg-white p-6 rounded-lg border border-blue-200'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Attendance Filters</h2>
                 <div className='grid gap-3 md:grid-cols-3'>
                   <select value={attendanceFilterClass} onChange={(e) => setAttendanceFilterClass(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
@@ -1131,7 +1223,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-blue-200'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-2'>Attendance register</h2>
                 <p className='text-sm text-blue-800 mb-4'>
                   Date: <span className='font-semibold'>{registerDate}</span>
@@ -1212,15 +1304,15 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 )}
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-slate-200'>
-                <h2 className='text-lg font-semibold text-slate-900 mb-4'>Manage Attendance Records</h2>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Manage Attendance Records</h2>
                 <div className='space-y-3'>
                   {attendanceTabRecords.length === 0 ? (
-                    <p className='text-slate-700'>No attendance records found for this class/section.</p>
+                    <p className={`${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>No attendance records found for this class/section.</p>
                   ) : attendanceTabRecords.map((rec) => {
                     const student = attendanceFilteredStudents.find((s) => s.id === rec.studentId);
                     return (
-                      <div key={rec.id} className='border border-slate-200 rounded p-3'>
+                      <div key={rec.id} className={`border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} rounded p-3`}>
                         {editAttendanceId === rec.id ? (
                           <div className='grid gap-2 md:grid-cols-3 items-center'>
                             <input type='date' value={editAttendance.date} onChange={(e) => setEditAttendance({ ...editAttendance, date: e.target.value })} className='px-3 py-2 border border-slate-300 rounded-md' />
@@ -1262,8 +1354,8 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
           {/* LEARNING MATERIALS TAB */}
           {activeTab === 'materials' && (
             <div className='space-y-6'>
-              <div className='bg-white p-6 rounded-lg border border-slate-200'>
-                <h2 className='text-lg font-semibold text-slate-900 mb-4'>Upload Learning Material</h2>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Upload Learning Material</h2>
                 <div className='space-y-4'>
                   <input type='text' placeholder='Material Title' value={material.title} onChange={(e) => setMaterial({...material, title: e.target.value})} className='w-full px-3 py-2 border border-slate-300 rounded-md' />
                   <select value={material.type} onChange={(e) => setMaterial({...material, type: e.target.value})} className='w-full px-3 py-2 border border-slate-300 rounded-md'>
@@ -1313,13 +1405,13 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
 
-              <div className='bg-white p-6 rounded-lg border border-slate-200'>
-                <h2 className='text-lg font-semibold text-slate-900 mb-4'>Manage Study Materials</h2>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
+                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Manage Study Materials</h2>
                 <div className='space-y-3'>
                   {filteredMaterials.length === 0 ? (
-                    <p className='text-slate-700'>No study material found.</p>
+                    <p className={`${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>No study material found.</p>
                   ) : filteredMaterials.map((mat) => (
-                    <div key={mat.id} className='border border-slate-200 rounded p-3'>
+                    <div key={mat.id} className={`border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} rounded p-3`}>
                       {editMaterialId === mat.id ? (
                         <div className='space-y-2'>
                           <input value={editMaterial.title} onChange={(e) => setEditMaterial({ ...editMaterial, title: e.target.value })} className='w-full px-3 py-2 border border-slate-300 rounded-md' />
@@ -1351,7 +1443,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
                           <div className='flex items-center justify-between gap-3'>
                             <div className='flex-1'>
                               <p className='font-semibold'>{mat.title} <span className='text-xs text-slate-500'>({mat.type})</span></p>
-                              <p className='text-sm text-slate-700'>Class: {mat.className || 'N/A'} | Section: {mat.section || 'N/A'}</p>
+                              <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Class: {mat.className || 'N/A'} | Section: {mat.section || 'N/A'}</p>
                               <p className='text-sm text-slate-600 mt-1'>{mat.description}</p>
                               {renderFilePreview(mat.url, mat.fileName, mat.type)}
                             </div>
@@ -1369,7 +1461,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }

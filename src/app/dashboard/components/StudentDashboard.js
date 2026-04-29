@@ -41,6 +41,28 @@ const sortLatestFirst = (items = []) => [...items].sort((a, b) => getLatestTimes
 
 export default function StudentDashboard({ user, allUsers: propUsers, showMessage, loadData }) {
   const [activeTab, setActiveTab] = useState('overview');
+  const [isDarkMode, setIsDarkMode] = useState(false);
+
+  useEffect(() => {
+    const savedTheme = localStorage.getItem('school_theme');
+    if (savedTheme === 'dark') {
+      setIsDarkMode(true);
+      document.documentElement.classList.add('dark');
+    }
+  }, []);
+
+  const toggleTheme = () => {
+    const newTheme = !isDarkMode;
+    setIsDarkMode(newTheme);
+    if (newTheme) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('school_theme', 'dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+      localStorage.setItem('school_theme', 'light');
+    }
+  };
+
   const [homeworkSubmission, setHomeworkSubmission] = useState({ 
     homeworkId: '', 
     submission: '', 
@@ -416,73 +438,88 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
   }
 
   return (
-    <div className="mx-auto max-w-7xl p-6 grid gap-6 lg:grid-cols-[260px_1fr]">
-      <aside className="rounded-2xl border border-slate-200/50 bg-gradient-to-b from-slate-50 to-blue-50 p-6 shadow-xl backdrop-blur-sm h-fit lg:sticky lg:top-24 lg:max-h-[calc(100vh-12rem)] lg:overflow-y-auto">
+    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
+      <aside className={`w-80 flex-shrink-0 border-r shadow-lg z-40 flex flex-col h-screen sticky top-0 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className="text-center mb-6">
-          <div className="w-20 h-20 mx-auto bg-gradient-to-r from-blue-500 to-purple-500 rounded-full flex items-center justify-center text-3xl text-white mb-3">
-            👨‍🎓
+          <div className="relative inline-block mt-4 mb-3">
+            {currentStudent.profilePhoto ? (
+              <img src={currentStudent.profilePhoto} alt={currentStudent.name} className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-lg mx-auto" />
+            ) : (
+              <div className={`w-20 h-20 rounded-full mx-auto flex items-center justify-center text-3xl font-bold border-3 border-blue-500 ${isDarkMode ? 'bg-gray-700 text-white' : 'bg-gradient-to-r from-blue-500 to-purple-500 text-white'}`}>
+                👨‍🎓
+              </div>
+            )}
+            <label className="absolute bottom-0 right-0 bg-blue-600 rounded-full p-1.5 cursor-pointer hover:bg-blue-700 transition shadow-md">
+              <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 13a3 3 0 11-6 0 3 3 0 016 0z" />
+              </svg>
+              <input type="file" accept="image/*" onChange={handleProfilePhotoChange} className="hidden" />
+            </label>
           </div>
-          <h3 className="text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent">
+          {currentStudent.profilePhoto && (
+            <button onClick={handleRemoveProfilePhoto} className="mt-1 text-xs text-red-500 hover:text-red-700 transition block mx-auto mb-3">
+              Remove Photo
+            </button>
+          )}
+
+          <h3 className={`text-xl font-bold bg-gradient-to-r from-blue-600 to-purple-600 bg-clip-text text-transparent`}>
             {currentStudent.name}
           </h3>
-          <p className="text-sm text-slate-600 mt-1">
+          <p className={`text-sm mt-1 ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>
             Class: {currentStudent.className || 'N/A'} | Section: {currentStudent.section || currentStudent.sec || 'N/A'}
           </p>
           {currentStudent?.schoolName && (
-            <p className="text-xs font-semibold text-gray-700 mt-2">🏫 {currentStudent.schoolName}</p>
+            <p className={`text-xs font-semibold mt-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>🏫 {currentStudent.schoolName}</p>
           )}
-          <p className="text-xs font-semibold text-gray-600 mt-1">📚 Board: {currentStudent?.board || 'N/A'}</p>
-          {currentStudent.profilePhoto && (
-            <img
-              src={currentStudent.profilePhoto}
-              alt={currentStudent.name}
-              className="w-20 h-20 mx-auto rounded-full object-cover border-4 border-white shadow-lg mt-4"
-            />
-          )}
-          <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
-            <label className="cursor-pointer rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700">
-              Change Photo
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                onChange={handleProfilePhotoChange}
-              />
-            </label>
-            {currentStudent.profilePhoto && (
-              <button
-                type="button"
-                onClick={handleRemoveProfilePhoto}
-                className="rounded-md border border-red-200 px-3 py-2 text-xs font-semibold text-red-600 hover:bg-red-50"
-              >
-                Remove
-              </button>
+          <p className={`text-xs font-semibold mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>📚 Board: {currentStudent?.board || 'N/A'}</p>
+
+          {/* Theme Toggle */}
+          <button
+            onClick={toggleTheme}
+            className={`mt-4 w-full py-2 rounded-lg flex items-center justify-center gap-2 text-sm font-medium transition-all duration-300 ${isDarkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600 border border-gray-600' : 'bg-gray-100 text-gray-800 hover:bg-gray-200 border border-gray-200'}`}
+          >
+            {isDarkMode ? (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+                Light Mode
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                Dark Mode
+              </>
             )}
-          </div>
+          </button>
         </div>
         
-        <div className="border-t border-blue-200 pt-4 mb-4">
-          <div className="space-y-2">
+        {/* Navigation Menu */}
+        <div className="flex-1 overflow-y-auto p-4">
+          <p className={`text-xs font-semibold uppercase tracking-wider mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
+          <div className="space-y-1">
             {navButtons.map((btn) => (
               <button
                 key={btn.tab}
-                type="button"
                 onClick={() => setActiveTab(btn.tab)}
-                className={`w-full text-left px-4 py-3 rounded-xl transition-all duration-200 shadow-sm border ${
-                  activeTab === btn.tab
-                    ? 'bg-gradient-to-r from-blue-500 to-blue-600 text-white shadow-blue-300/50 border-blue-400 hover:shadow-blue-400/70'
-                    : 'bg-white/70 hover:bg-white border-slate-200/50 hover:border-blue-300/50 hover:shadow-md text-slate-800 hover:text-blue-700 font-medium'
-                }`}
+                className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === btn.tab ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
               >
-                <span className="text-sm font-semibold">{btn.label}</span>
+                {btn.label}
               </button>
             ))}
           </div>
         </div>
+
+        {/* Logout Button */}
+        <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+          <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
+            Logout
+          </button>
+        </div>
       </aside>
 
-      <div>
-        <div className="mb-8 border-b-2 border-slate-200/50 pb-4">
+      {/* MAIN CONTENT */}
+      <main className="flex-1 overflow-y-auto p-6 min-h-screen">
+        <div className={`mb-8 border-b-2 ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}/50 pb-4`}>
           <nav className="flex flex-wrap gap-4">
             {navButtons.map((btn) => (
               <button
@@ -549,7 +586,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
               </div>
 
               {/* Recent Homework */}
-              <div className='bg-white p-6 rounded-lg border border-blue-200 shadow-sm'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 shadow-sm`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Recent Homework</h2>
                 <div className='space-y-2'>
                   {myHomework.slice(0, 5).map(hw => {
@@ -577,7 +614,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
               </div>
 
               {/* Recent Materials */}
-              <div className='bg-white p-6 rounded-lg border border-blue-200 shadow-sm'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 shadow-sm`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>Recent Study Materials</h2>
                 <div className='space-y-2'>
                   {myMaterials.slice(0, 3).map(mat => {
@@ -606,7 +643,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
           {activeTab === 'homework' && (
             <div className='space-y-6'>
               {/* Submit Homework Form */}
-              <div className='bg-white p-6 rounded-lg border border-blue-200 shadow-sm'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 shadow-sm`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>📝 Submit Homework</h2>
                 <div className='space-y-4'>
                   <select
@@ -674,7 +711,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
               </div>
 
               {/* Homework Progress */}
-              <div className='bg-white p-6 rounded-lg border border-blue-200 shadow-sm'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 shadow-sm`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>📊 My Homework Progress</h2>
                 <div className='mb-4 bg-gray-200 rounded-full h-4 overflow-hidden'>
                   <div 
@@ -732,13 +769,13 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
 
           {/* MATERIALS TAB */}
           {activeTab === 'materials' && (
-            <div className='bg-white p-6 rounded-lg border border-blue-200 shadow-sm'>
+            <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 shadow-sm`}>
               <h2 className='text-lg font-semibold text-blue-900 mb-4'>📚 Learning Materials</h2>
               <div className='space-y-4'>
                 {myMaterials.map(material => {
                   const isRead = material.readBy?.some(r => r.studentId === currentStudent.id);
                   return (
-                    <div key={material.id} className='border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow'>
+                    <div key={material.id} className={`border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} rounded-lg p-4 hover:shadow-md transition-shadow`}>
                       <div className='flex justify-between items-start mb-2'>
                         <div className='flex-1'>
                           <h3 className='font-semibold text-slate-800'>{material.title}</h3>
@@ -754,7 +791,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
                           </button>
                         )}
                       </div>
-                      <p className='text-sm text-slate-700 mb-3'>{material.description}</p>
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mb-3`}>{material.description}</p>
                       {renderFilePreview(material.url, material.fileName, material.type)}
                       {material.url && material.url !== '#' && (
                         <a
@@ -780,7 +817,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
           {/* ATTENDANCE TAB */}
           {activeTab === 'attendance' && (
             <div className='space-y-6'>
-              <div className='bg-white p-6 rounded-lg border border-blue-200 shadow-sm'>
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 shadow-sm`}>
                 <h2 className='text-lg font-semibold text-blue-900 mb-4'>📅 My Attendance Summary</h2>
                 <div className='grid gap-4 md:grid-cols-3 mb-6'>
                   <div className='bg-green-50 rounded-lg p-4 text-center border border-green-200'>
@@ -811,7 +848,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
                 <div className='space-y-2'>
                   {myAttendance.length > 0 ? (
                     myAttendance.sort((a, b) => new Date(b.date) - new Date(a.date)).map(att => (
-                      <div key={att.id} className='flex justify-between items-center p-3 border border-slate-200 rounded-lg'>
+                      <div key={att.id} className={`flex justify-between items-center p-3 border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} rounded-lg`}>
                         <div>
                           <p className='font-medium text-slate-800'>{new Date(att.date).toLocaleDateString()}</p>
                           <p className='text-xs text-slate-500'>Teacher ID: {att.teacherId?.toString().slice(-4)}</p>
@@ -833,7 +870,7 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
             </div>
           )}
         </div>
-      </div>
+      </main>
     </div>
   );
 }
