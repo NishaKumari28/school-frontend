@@ -282,8 +282,6 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
           </button>
         </div>
 
-        </div>
-
         {/* Navigation Menu */}
         <div className="flex-1 overflow-y-auto p-4">
           <p className={`text-xs font-semibold uppercase tracking-wider mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
