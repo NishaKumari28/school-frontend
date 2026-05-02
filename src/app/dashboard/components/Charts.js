@@ -26,8 +26,8 @@ export default function AnalyticsChart({ type = 'bar', data, title, xKey, series
   const DataComponent = type === 'line' ? Line : Bar;
 
   return (
-    <div className='bg-white p-4 rounded-lg border border-slate-500 shadow-sm'>
-      <h3 className='text-md font-semibold text-slate-800 mb-4'>{title}</h3>
+    <div className={`p-4 rounded-xl border shadow-sm ${typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-slate-200 text-slate-800'}`}>
+      <h3 className={`text-md font-bold mb-4 ${typeof document !== 'undefined' && document.documentElement.classList.contains('dark') ? 'text-white' : 'text-slate-800'}`}>{title}</h3>
       <div style={{ width: '100%', height: height }}>
         <ResponsiveContainer>
           <ChartComponent data={data} margin={{ top: 5, right: 30, left: 20, bottom: 5 }}>

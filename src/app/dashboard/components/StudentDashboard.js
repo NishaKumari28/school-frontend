@@ -1,6 +1,7 @@
 'use client';
 import { useState, useMemo, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
+import StudentQuizzes from './StudentQuizzes';
 import { updateUserProfilePhoto } from '../../components/auth/authService';
 
 // Local storage keys
@@ -8,7 +9,10 @@ const STORAGE_KEYS = {
   HOMEWORK: 'student_homework',
   MATERIALS: 'student_materials',
   ATTENDANCE: 'student_attendance',
-  USERS: 'student_users'
+  USERS: 'student_users',
+  CLASSES: 'school_classes',
+  SECTIONS: 'school_sections',
+  ACADEMIC_YEARS: 'academic_years'
 };
 
 // Helper functions
@@ -426,7 +430,8 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
     { label: 'Overview', tab: 'overview' },
     { label: 'My Homework', tab: 'homework' },
     { label: 'Study Materials', tab: 'materials' },
-    { label: 'My Attendance', tab: 'attendance' }
+    { label: 'My Attendance', tab: 'attendance' },
+    { label: 'My Quizzes', tab: 'quizzes' }
   ];
 
   if (isLoading) {
@@ -637,6 +642,15 @@ export default function StudentDashboard({ user, allUsers: propUsers, showMessag
                 </div>
               </div>
             </>
+          )}
+
+          {/* QUIZZES TAB */}
+          {activeTab === 'quizzes' && (
+            <StudentQuizzes 
+              student={currentStudent} 
+              isDarkMode={isDarkMode} 
+              showMessage={showMessage} 
+            />
           )}
 
           {/* HOMEWORK TAB */}

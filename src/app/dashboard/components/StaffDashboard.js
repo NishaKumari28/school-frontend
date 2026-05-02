@@ -3,6 +3,13 @@ import { useMemo, useState, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
 import { getFeeStructure, updateFeeStructure, sendNotification, getFeePayments, updateFeePaymentStatus, updateUserProfilePhoto } from '../../components/auth/authService';
 
+import StaffTeacherAttendance from './StaffTeacherAttendance';
+import StaffHostel from './StaffHostel';
+import StaffLibrary from './StaffLibrary';
+import StaffTransport from './StaffTransport';
+import StaffFees from './StaffFees';
+import { initializeSampleData } from '../utils/staffDataUtils';
+
 export default function StaffDashboard({ user, allUsers, showMessage }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [isDarkMode, setIsDarkMode] = useState(false);
@@ -14,6 +21,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       setIsDarkMode(true);
       document.documentElement.classList.add('dark');
     }
+    initializeSampleData();
   }, []);
 
   const toggleTheme = () => {
@@ -62,38 +70,48 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   };
 
   const [notification, setNotification] = useState({ title: '', message: '', targetRole: 'all' });
-  const [fee, setFee] = useState({ className: '', feeAmount: '', description: '' });
-  const [paymentRefreshKey, setPaymentRefreshKey] = useState(0);
+  const [staffClassFilter, setStaffClassFilter] = useState('');
+  const [staffSectionFilter, setStaffSectionFilter] = useState('');
 
   const students = allUsers.filter(u => u.role === 'student');
   const teachers = allUsers.filter(u => u.role === 'teacher');
   const parents = allUsers.filter(u => u.role === 'parents');
- // const staff = allUsers.filter(u => u.role === 'staff');
 
-  const feePayments = useMemo(() => {
-    return getFeePayments().slice().sort((a, b) => new Date(b.requestedAt || b.paidAt) - new Date(a.requestedAt || a.paidAt));
-  }, [paymentRefreshKey]);
+  const normalize = (value) => String(value ?? '').trim().toLowerCase();
+  
+  const parseMultiValueField = (value) => {
+    if (!value) return [];
+    return String(value).split(',').map((item) => item.trim()).filter(Boolean);
+  };
 
-  const paymentSummary = useMemo(() => ({
-    pending: feePayments.filter((payment) => payment.status === 'pending').length,
-    processing: feePayments.filter((payment) => payment.status === 'processing').length,
-    paid: feePayments.filter((payment) => payment.status === 'paid').length,
-    rejected: feePayments.filter((payment) => payment.status === 'rejected').length
-  }), [feePayments]);
+  const myAdmin = useMemo(() => {
+    const admin = allUsers.find(u => u.id && user.createdByAdminId && String(u.id) === String(user.createdByAdminId)) || 
+                  allUsers.find(u => normalize(u.role) === 'admin' && normalize(u.schoolName) === normalize(user.schoolName));
+    return admin || user;
+  }, [allUsers, user]);
+
+  const adminAssignedClasses = useMemo(() => parseMultiValueField(myAdmin?.className || myAdmin?.classes), [myAdmin]);
+
+  const getLocalData = (key) => {
+    if (typeof window === 'undefined') return [];
+    const stored = localStorage.getItem(key);
+    return stored ? JSON.parse(stored) : [];
+  };
+
+  const [availableClasses, setAvailableClasses] = useState(['Nursery','LKG','UKG','1','2','3','4','5','6','7','8','9','10','11','12']);
+  const staffClassOptions = adminAssignedClasses.length > 0 ? adminAssignedClasses : availableClasses;
 
   const handleSendNotification = () => {
     if (!notification.title || !notification.message) {
       showMessage('Please fill notification fields', 'error');
       return;
     }
-
     const result = sendNotification({
       title: notification.title,
       message: notification.message,
       targetRole: notification.targetRole,
       senderId: user.id
     });
-
     if (result.success) {
       showMessage('Notification sent successfully!');
       setNotification({ title: '', message: '', targetRole: 'all' });
@@ -102,41 +120,14 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
     }
   };
 
-  const handleUpdateFee = () => {
-    if (!fee.className || !fee.feeAmount) {
-      showMessage('Please fill fee fields', 'error');
-      return;
-    }
-
-    const result = updateFeeStructure({
-      className: fee.className,
-      feeAmount: parseFloat(fee.feeAmount),
-      description: fee.description
-    });
-
-    if (result.success) {
-      showMessage('Fee structure updated successfully!');
-      setFee({ className: '', feeAmount: '', description: '' });
-    } else {
-      showMessage(result.message, 'error');
-    }
-  };
-
-  const handlePaymentStatusUpdate = (paymentId, status) => {
-    const result = updateFeePaymentStatus({ id: paymentId, status });
-
-    if (result.success) {
-      setPaymentRefreshKey((prev) => prev + 1);
-      showMessage(`Payment marked as ${status}`);
-    } else {
-      showMessage(result.message, 'error');
-    }
-  };
-
   const navButtons = [
-    { label: 'Overview', tab: 'overview' },
-    { label: 'Notifications', tab: 'notifications' },
-    { label: 'Fee Structure', tab: 'fees' }
+    { label: 'Overview', tab: 'overview', icon: '📊' },
+    { label: 'Teacher Attendance', tab: 'teacher_attendance', icon: '👨‍🏫' },
+    { label: 'Hostel', tab: 'hostel', icon: '🏢' },
+    { label: 'Library', tab: 'library', icon: '📚' },
+    { label: 'Transport', tab: 'transport', icon: '🚌' },
+    { label: 'Fees Control', tab: 'fees', icon: '💰' },
+    { label: 'Notifications', tab: 'notifications', icon: '🔔' }
   ];
 
   return (
@@ -165,8 +156,8 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
             </button>
           )}
 
-          <h3 className={`text-xl font-bold text-center ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{user?.name || 'Non Teaching Staff'}</h3>
-          <p className="text-sm font-semibold text-blue-600 text-center">Non Teaching Staff</p>
+          <h3 className={`text-xl font-bold text-center ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>{user?.name || 'Staff Member'}</h3>
+          <p className="text-sm font-semibold text-blue-600 text-center">Staff Member</p>
           <p className={`text-xs text-center mt-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>{user?.number}</p>
           
           {user?.schoolName && (
@@ -193,7 +184,6 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
           </button>
         </div>
         
-        {/* Navigation Menu */}
         <div className="flex-1 overflow-y-auto p-4">
           <p className={`text-xs font-semibold uppercase tracking-wider mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
           <div className="space-y-1">
@@ -203,6 +193,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                 onClick={() => setActiveTab(btn.tab)}
                 className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === btn.tab ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
               >
+                <span className="mr-2">{btn.icon}</span>
                 {btn.label}
               </button>
             ))}
@@ -217,8 +208,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
         </div>
       </aside>
 
-      {/* MAIN CONTENT */}
-      <main className="flex-1 overflow-y-auto p-6 min-h-screen">
+      <main className="flex-1 overflow-y-auto p-8 relative">
         <div className={`mb-8 border-b-2 ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}/50 pb-4`}>
           <nav className="flex flex-wrap gap-4">
             {navButtons.map((btn) => (
@@ -238,37 +228,149 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
           </nav>
         </div>
 
-        <div className="space-y-6">
+        {/* Top Header Section */}
+        <div className="flex items-center justify-between mb-8">
+          <div>
+            <h1 className="text-2xl font-black tracking-tight">Staff Management Portal</h1>
+            <p className="text-slate-500 text-sm">Welcome back, {user.name} · {new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+          </div>
+        </div>
+
+        <div className="space-y-8">
           {activeTab === 'overview' && (
-            <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
-              <DashboardCard className="cursor-pointer" title="Students" icon="S" value={students.length} color="blue" />
-              <DashboardCard className="cursor-pointer" title="Teachers" icon="T" value={teachers.length} color="green" />
-              <DashboardCard className="cursor-pointer" title="Parents" icon="P" value={parents.length} color="purple" />
+            <div className="space-y-8 animate-in fade-in duration-500">
+               <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
+                <DashboardCard title="Total Students" icon="🎓" value={students.length} color="blue" />
+                <DashboardCard 
+                  title="Active Teachers" 
+                  icon="🧑‍🏫" 
+                  value={teachers.length} 
+                  color="green" 
+                  onClick={() => setActiveTab('teacher_attendance')}
+                />
+                <DashboardCard 
+                  title="Library Books" 
+                  icon="📖" 
+                  value="1,240" 
+                  color="purple" 
+                  onClick={() => setActiveTab('library')}
+                />
+                <DashboardCard 
+                  title="Active Routes" 
+                  icon="🚌" 
+                  value="8" 
+                  color="orange" 
+                  onClick={() => setActiveTab('transport')}
+                />
+              </div>
+              
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className={`p-6 rounded-3xl border shadow-xl ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+                  <h3 className="text-lg font-black mb-6 flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-sm">📅</span>
+                    Operations Summary
+                  </h3>
+                  <div className="space-y-4">
+                    {[
+                      { label: 'Hostel Occupancy', val: '84%', color: 'bg-blue-500' },
+                      { label: 'Library Utilization', val: '62%', color: 'bg-purple-500' },
+                      { label: 'Transport Efficiency', val: '91%', color: 'bg-orange-500' },
+                      { label: 'Fee Collection', val: '78%', color: 'bg-emerald-500' },
+                    ].map((item, i) => (
+                      <div key={i} className="space-y-1.5">
+                        <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-500">
+                          <span>{item.label}</span>
+                          <span>{item.val}</span>
+                        </div>
+                        <div className="h-2 w-full bg-slate-100 dark:bg-gray-900 rounded-full overflow-hidden">
+                          <div className={`h-full ${item.color} transition-all duration-1000`} style={{ width: item.val }} />
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className={`p-6 rounded-3xl border shadow-xl ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+                  <h3 className="text-lg font-black mb-6 flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-lg bg-orange-100 flex items-center justify-center text-sm">📣</span>
+                    Recent Activity
+                  </h3>
+                  <div className="space-y-6">
+                    {[
+                      { icon: '💰', text: 'Parent of Arjun (Cl-5) paid Fee Rs. 15,000', time: '10 mins ago' },
+                      { icon: '📚', text: 'Modern Physics issued to Prof. Khanna', time: '45 mins ago' },
+                      { icon: '🏢', text: 'Visitor: Mr. Gupta (Parent) checked-in at Hostel', time: '2 hrs ago' },
+                    ].map((act, i) => (
+                      <div key={i} className="flex gap-4">
+                        <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-gray-900 flex items-center justify-center text-lg">{act.icon}</div>
+                        <div>
+                          <p className="text-sm font-bold">{act.text}</p>
+                          <p className="text-xs text-slate-400">{act.time}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
             </div>
           )}
 
+          {activeTab === 'teacher_attendance' && (
+            <StaffTeacherAttendance 
+              teachers={teachers} 
+              isDarkMode={isDarkMode} 
+              user={user} 
+              showMessage={showMessage} 
+            />
+          )}
+
+          {activeTab === 'hostel' && (
+            <StaffHostel isDarkMode={isDarkMode} showMessage={showMessage} />
+          )}
+
+          {activeTab === 'library' && (
+            <StaffLibrary isDarkMode={isDarkMode} showMessage={showMessage} allUsers={allUsers} />
+          )}
+
+          {activeTab === 'transport' && (
+            <StaffTransport isDarkMode={isDarkMode} showMessage={showMessage} />
+          )}
+
+          {activeTab === 'fees' && (
+            <StaffFees 
+              isDarkMode={isDarkMode} 
+              showMessage={showMessage} 
+              staffClassOptions={staffClassOptions}
+              students={students}
+              parents={parents}
+            />
+          )}
+
           {activeTab === 'notifications' && (
-            <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
-              <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Send Notification</h2>
+            <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-8 rounded-3xl border border-slate-100 shadow-xl max-w-2xl`}>
+              <h2 className="text-xl font-black mb-6 flex items-center gap-2">
+                <span className="w-10 h-10 rounded-2xl bg-orange-100 flex items-center justify-center text-xl">🔔</span>
+                Broadcast Notification
+              </h2>
               <div className='space-y-4'>
                 <input
                   type='text'
                   placeholder='Notification Title'
                   value={notification.title}
                   onChange={(e) => setNotification({...notification, title: e.target.value})}
-                  className='w-full px-3 py-2 border border-slate-300 rounded-md'
+                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                 />
                 <textarea
                   placeholder='Notification Message'
                   value={notification.message}
                   onChange={(e) => setNotification({...notification, message: e.target.value})}
-                  className='w-full px-3 py-2 border border-slate-300 rounded-md'
+                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                   rows={4}
                 />
                 <select
                   value={notification.targetRole}
                   onChange={(e) => setNotification({...notification, targetRole: e.target.value})}
-                  className='w-full px-3 py-2 border border-slate-300 rounded-md'
+                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                 >
                   <option value='all'>All Users</option>
                   <option value='students'>Students Only</option>
@@ -277,124 +379,10 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                 </select>
                 <button
                   onClick={handleSendNotification}
-                  className={`bg-orange-600 ${isDarkMode ? 'text-white' : 'text-slate-900'} px-4 py-2 rounded-md hover:bg-orange-700`}
+                  className="w-full bg-orange-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-orange-500/30 hover:bg-orange-700 transition-all active:scale-[0.98]"
                 >
-                  Send Notification
+                  Send Broadcast
                 </button>
-              </div>
-            </div>
-          )}
-
-          {activeTab === 'fees' && (
-            <div className='space-y-6'>
-              <div className='grid gap-4 md:grid-cols-2 lg:grid-cols-4'>
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer h-auto min-h-[9rem]" title="Pending Requests" icon="P" value={paymentSummary.pending} color="orange" />
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer h-auto min-h-[9rem]" title="Processing" icon="I" value={paymentSummary.processing} color="blue" />
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer h-auto min-h-[9rem]" title="Paid" icon="D" value={paymentSummary.paid} color="green" />
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer h-auto min-h-[9rem]" title="Rejected" icon="R" value={paymentSummary.rejected} color="red" />
-              </div>
-
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
-                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Update Fee Structure</h2>
-                <div className='grid gap-4 md:grid-cols-3'>
-                  <input
-                    type='text'
-                    placeholder='Class Name (e.g., Class 10)'
-                    value={fee.className}
-                    onChange={(e) => setFee({...fee, className: e.target.value})}
-                    className='px-3 py-2 border border-slate-300 rounded-md'
-                  />
-                  <input
-                    type='number'
-                    placeholder='Fee Amount'
-                    value={fee.feeAmount}
-                    onChange={(e) => setFee({...fee, feeAmount: e.target.value})}
-                    className='px-3 py-2 border border-slate-300 rounded-md'
-                  />
-                  <input
-                    type='text'
-                    placeholder='Description (optional)'
-                    value={fee.description}
-                    onChange={(e) => setFee({...fee, description: e.target.value})}
-                    className='px-3 py-2 border border-slate-300 rounded-md'
-                  />
-                </div>
-                <button
-                  onClick={handleUpdateFee}
-                  className={`mt-4 bg-green-600 ${isDarkMode ? 'text-white' : 'text-slate-900'} px-4 py-2 rounded-md hover:bg-green-700`}
-                >
-                  Update Fee Structure
-                </button>
-              </div>
-
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
-                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Current Fee Structure</h2>
-                <div className='space-y-2'>
-                  {getFeeStructure().map(f => (
-                    <div key={f.id} className={`flex justify-between items-center p-3 border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} rounded`}>
-                      <div>
-                        <span className='font-medium'>{f.className}</span>
-                        {f.description && <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} ml-2`}>{f.description}</span>}
-                      </div>
-                      <span className='font-bold text-green-600'>Rs. {f.feeAmount}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
-                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Parent Payment Requests</h2>
-                <div className='space-y-3'>
-                  {feePayments.length === 0 ? (
-                    <p className='text-slate-500'>No payment requests found.</p>
-                  ) : (
-                    feePayments.map((payment) => {
-                      const student = students.find((entry) => entry.id === payment.studentId);
-                      const parent = parents.find((entry) => entry.id === payment.parentId);
-
-                      return (
-                        <div key={payment.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
-                          <div className='flex flex-wrap items-start justify-between gap-4'>
-                            <div className={`space-y-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
-                              <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Rs. {payment.amount}</p>
-                              <p>Student: {student?.name || `Student #${payment.studentId}`}</p>
-                              <p>Parent: {parent?.name || `Parent #${payment.parentId}`}</p>
-                              <p>Class: {payment.className || student?.className || 'N/A'}</p>
-                              <p>Plan: {payment.plan.replace('_', ' ')}</p>
-                              <p>Status: <span className='font-semibold capitalize'>{payment.status}</span></p>
-                              <p>Requested: {new Date(payment.requestedAt).toLocaleDateString()}</p>
-                              {payment.note && <p>Note: {payment.note}</p>}
-                            </div>
-
-                            <div className='flex flex-wrap gap-2'>
-                              <button
-                                type='button'
-                                onClick={() => handlePaymentStatusUpdate(payment.id, 'processing')}
-                                className='rounded-md bg-blue-600 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-700'
-                              >
-                                Mark Processing
-                              </button>
-                              <button
-                                type='button'
-                                onClick={() => handlePaymentStatusUpdate(payment.id, 'paid')}
-                                className='rounded-md bg-green-600 px-3 py-2 text-sm font-semibold text-white hover:bg-green-700'
-                              >
-                                Mark Paid
-                              </button>
-                              <button
-                                type='button'
-                                onClick={() => handlePaymentStatusUpdate(payment.id, 'rejected')}
-                                className='rounded-md bg-red-600 px-3 py-2 text-sm font-semibold text-white hover:bg-red-700'
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
               </div>
             </div>
           )}

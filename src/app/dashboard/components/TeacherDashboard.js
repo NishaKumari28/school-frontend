@@ -1,13 +1,19 @@
 'use client';
 import { useMemo, useState, useEffect } from 'react';
 import AnalyticsChart from './Charts';
+import LMSDashboard from './LMSDashboard';
+import quizDataUtils from '../utils/quizDataUtils';
+
 
 // Local storage keys
 const STORAGE_KEYS = {
   HOMEWORK: 'teacher_homework',
   ATTENDANCE: 'teacher_attendance',
   MATERIALS: 'teacher_materials',
-  USERS: 'teacher_users'
+  USERS: 'teacher_users',
+  CLASSES: 'school_classes',
+  SECTIONS: 'school_sections',
+  ACADEMIC_YEARS: 'academic_years'
 };
 
 // Helper functions
@@ -193,21 +199,59 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
     return parent ? parent.name : null;
   };
 
-  const students = allUsers.filter(u => u.role === 'student');
+const students = allUsers.filter(u => u.role === 'student');
   const parents = allUsers.filter(u => u.role === 'parents');
 
   const normalize = (value) => String(value ?? '').trim().toLowerCase();
   const teacherClassName = user.className || user.classId || '';
   const teacherSection = user.section || user.sec || '';
   const teacherSubject = user.subject || 'N/A';
-  const classOptions = ['Nursery', 'LKG', 'UKG', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
-  const sectionOptions = ['A', 'B', 'C', 'D', 'E', 'F'];
+  
+  // Helper function to parse comma-separated values (e.g., "9,10" -> ["9", "10"])
+  const parseMultiValueField = (value) => {
+    if (!value) return [];
+    return String(value)
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+  };
+  
+  // Find the admin of this school
+  const myAdmin = useMemo(() => {
+    const admin = allUsers.find(u => u.id && user.createdByAdminId && String(u.id) === String(user.createdByAdminId)) || 
+                  allUsers.find(u => normalize(u.role) === 'admin' && normalize(u.schoolName) === normalize(user.schoolName));
+    return admin || user;
+  }, [allUsers, user]);
+
+  const adminAssignedClasses = useMemo(() => parseMultiValueField(myAdmin?.className || myAdmin?.classes), [myAdmin]);
+  const adminAssignedSections = useMemo(() => parseMultiValueField(myAdmin?.section || myAdmin?.sec), [myAdmin]);
+  const adminAssignedYears = useMemo(() => parseMultiValueField(myAdmin?.academicYear), [myAdmin]);
+  const adminAssignedBoards = useMemo(() => parseMultiValueField(myAdmin?.board), [myAdmin]);
+
+  const [availableClasses, setAvailableClasses] = useState(['Nursery','LKG','UKG','1','2','3','4','5','6','7','8','9','10','11','12']);
+  const [availableSections, setAvailableSections] = useState(['A','B','C','D','E','F']);
+  const [availableYears, setAvailableYears] = useState(['2025-26','2026-27','2027-28','2028-29','2029-30']);
+
+  useEffect(() => {
+    const c = getLocalData(STORAGE_KEYS.CLASSES) || [];
+    if (c.length) setAvailableClasses(c);
+    const s = getLocalData(STORAGE_KEYS.SECTIONS) || [];
+    if (s.length) setAvailableSections(s);
+    const y = getLocalData(STORAGE_KEYS.ACADEMIC_YEARS) || [];
+    if (y.length) setAvailableYears(y);
+  }, []);
+
+  const classOptions = adminAssignedClasses.length > 0 ? adminAssignedClasses : availableClasses;
+  const sectionOptions = adminAssignedSections.length > 0 ? adminAssignedSections : availableSections;
+  const yearOptions = adminAssignedYears.length > 0 ? adminAssignedYears : availableYears;
+
 
   const navButtons = [
     { label: 'Overview', tab: 'overview' },
     { label: 'Homework', tab: 'homework' },
     { label: 'Attendance', tab: 'attendance' },
-    { label: 'Learning Materials', tab: 'materials' }
+    { label: 'Learning Materials', tab: 'materials' },
+    { label: 'LMS', tab: 'lms' }
   ];
 
   const classStudents = useMemo(() => {
@@ -275,6 +319,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
     () => overviewStudents.filter((s) => !submittedStudentIds.has(s.id)),
     [overviewStudents, submittedStudentIds]
   );
+
 
   const classStudentIds = useMemo(() => new Set(overviewStudents.map((s) => s.id)), [overviewStudents]);
   const classAttendanceRecords = useMemo(
@@ -533,6 +578,19 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
       { status: 'Late', count: summary.late }
     ];
   }, [attendanceTabRecords]);
+
+  const activeQuizzesCount = useMemo(() => {
+    try {
+      return quizDataUtils.getAllQuizzes().filter(q => q.status === 'active').length;
+    } catch { return 0; }
+  }, []);
+
+  const stats = [
+    { label: 'Total Students', value: overviewStudents.length, icon: '👥', color: 'from-blue-500 to-blue-600' },
+    { label: 'Present Today', value: attendanceChartData.find(d => d.status === 'Present')?.count || 0, icon: '✅', color: 'from-emerald-500 to-emerald-600' },
+    { label: 'Homeworks', value: myHomework.length, icon: '📝', color: 'from-orange-500 to-orange-600' },
+    { label: 'LMS Quizzes', value: activeQuizzesCount, icon: '🎯', color: 'from-purple-500 to-purple-600' },
+  ];
 
   const myMaterials = materialsList.filter((m) => m.teacherId === user.id);
   const filteredMaterials = myMaterials.filter((m) => {
@@ -843,157 +901,154 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
         </div>
 
         <div className="space-y-6">
-          {/* OVERVIEW TAB */}
+               {/* OVERVIEW TAB */}
           {activeTab === 'overview' && (
-            <>
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200`}>
-                <h2 className='text-lg font-semibold text-blue-900 mb-4'>Overview Filters</h2>
-                <div className='grid gap-3 md:grid-cols-2'>
-                  <select value={overviewFilterClass} onChange={(e) => setOverviewFilterClass(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>Select Class (All)</option>
-                    {classOptions.map((cls) => <option key={cls} value={cls}>{cls}</option>)}
-                  </select>
-                  <select value={overviewFilterSection} onChange={(e) => setOverviewFilterSection(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>Select Section (All)</option>
-                    {sectionOptions.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
-                  </select>
-                </div>
-              </div>
-
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
-                <h2 className='text-lg font-semibold text-blue-900 mb-2'>
-                  Homework Status by Student ({teacherSubject})
-                </h2>
-                <p className='text-sm text-blue-800 mb-4'>
-                  Class: {overviewFilterClass || teacherClassName || 'All'} | Section: {overviewFilterSection || teacherSection || 'All'}
-                </p>
-                <div className='grid gap-4 md:grid-cols-2'>
-                  <div className='p-4 rounded-lg bg-green-50 border border-green-200'>
-                    <h3 className='font-semibold text-green-800 mb-2'>Submitted ({homeworkDoneStudents.length})</h3>
-                    {homeworkDoneStudents.length === 0 ? (
-                      <p className='text-sm text-green-700'>No student has submitted yet.</p>
-                    ) : (
-                      <ul className='text-sm text-green-900 space-y-1'>
-                        {homeworkDoneStudents.map((s) => <li key={s.id}>• {s.name}</li>)}
-                      </ul>
-                    )}
-                  </div>
-                  <div className='p-4 rounded-lg bg-red-50 border border-red-200'>
-                    <h3 className='font-semibold text-red-800 mb-2'>Not Submitted ({homeworkPendingStudents.length})</h3>
-                    {homeworkPendingStudents.length === 0 ? (
-                      <p className='text-sm text-red-700'>All students submitted.</p>
-                    ) : (
-                      <ul className='text-sm text-red-900 space-y-1'>
-                        {homeworkPendingStudents.map((s) => <li key={s.id}>• {s.name}</li>)}
-                      </ul>
-                    )}
+            <div className='space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500'>
+              {/* Overview Filters */}
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700' : ''} p-4 rounded-xl border border-blue-100 shadow-sm`}>
+                <div className='flex flex-wrap items-center justify-between gap-4'>
+                  <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-blue-900'}`}>Dashboard Overview</h2>
+                  <div className='flex gap-3'>
+                    <select value={overviewFilterClass} onChange={(e) => setOverviewFilterClass(e.target.value)} className={`px-3 py-1.5 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-blue-200 text-blue-900'}`}>
+                      <option value=''>Select Class (All)</option>
+                      {classOptions.map((cls) => <option key={cls} value={cls}>{cls}</option>)}
+                    </select>
+                    <select value={overviewFilterSection} onChange={(e) => setOverviewFilterSection(e.target.value)} className={`px-3 py-1.5 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-blue-200 text-blue-900'}`}>
+                      <option value=''>Select Section (All)</option>
+                      {sectionOptions.map((sec) => <option key={sec} value={sec}>{sec}</option>)}
+                    </select>
                   </div>
                 </div>
               </div>
 
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
-                <h2 className='text-lg font-semibold text-blue-900 mb-4'>Parent-Child Connections</h2>
-                <div className='grid gap-3 md:grid-cols-2 xl:grid-cols-4 mb-4'>
-                  <input
-                    type='text'
-                    value={linkStudentSearchTerm}
-                    onChange={(e) => setLinkStudentSearchTerm(e.target.value)}
-                    placeholder='Search student by name, number, class...'
-                    className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'
-                  />
-                  <select value={linkStudentAcademicYearFilter} onChange={(e) => setLinkStudentAcademicYearFilter(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>All Academic Years</option>
-                    {linkStudentAcademicYears.map((year) => <option key={year} value={year}>{year}</option>)}
-                  </select>
-                  <select value={linkStudentClassFilter} onChange={(e) => setLinkStudentClassFilter(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>All Classes</option>
-                    {linkStudentClasses.map((cls) => <option key={cls} value={cls}>{cls}</option>)}
-                  </select>
-                  <select value={linkStudentSectionFilter} onChange={(e) => setLinkStudentSectionFilter(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>All Sections</option>
-                    {linkStudentSections.map((section) => <option key={section} value={section}>{section}</option>)}
-                  </select>
+              {/* Quick Stats Grid */}
+              <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'>
+                {stats.map((stat, i) => (
+                  <div key={i} className={`relative overflow-hidden bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700' : ''} p-5 rounded-2xl border border-slate-100 shadow-sm group hover:shadow-md transition-all duration-300`}>
+                    <div className={`absolute top-0 right-0 w-24 h-24 bg-gradient-to-br ${stat.color} opacity-5 -mr-8 -mt-8 rounded-full transition-transform group-hover:scale-110`} />
+                    <div className='flex items-center gap-4'>
+                      <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${stat.color} flex items-center justify-center text-2xl shadow-lg shadow-blue-500/20`}>
+                        {stat.icon}
+                      </div>
+                      <div>
+                        <p className={`text-sm font-medium ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>{stat.label}</p>
+                        <h3 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{stat.value}</h3>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className='grid grid-cols-1 lg:grid-cols-2 gap-6'>
+                {/* Left Column */}
+                <div className='space-y-6'>
+                  {/* Attendance Summary - Directly using the chart component as it has its own card styling */}
+                  <div className="overflow-hidden rounded-2xl shadow-sm border border-slate-100">
+                    <AnalyticsChart 
+                      title="Today's Attendance"
+                      data={attendanceChartData} 
+                      xKey="status" 
+                      type="bar" 
+                      series={[{ dataKey: 'count', name: 'Students', color: '#3b82f6' }]} 
+                      height={180}
+                    />
+                  </div>
+
+                  {/* Homework Brief */}
+                  <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700' : ''} p-6 rounded-2xl border border-slate-100 shadow-sm`}>
+                    <div className='flex items-center justify-between mb-4'>
+                      <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Homework Progress</h3>
+                      <button onClick={() => setActiveTab('homework')} className='text-xs font-semibold text-blue-600 hover:underline'>Manage →</button>
+                    </div>
+                    <div className='grid grid-cols-2 gap-4'>
+                      <div className='p-4 rounded-xl bg-emerald-50 border border-emerald-100 dark:bg-emerald-900/20 dark:border-emerald-800'>
+                        <p className='text-xs font-bold text-emerald-800 dark:text-emerald-400 uppercase tracking-wider mb-1'>Submitted</p>
+                        <p className='text-2xl font-bold text-emerald-900 dark:text-emerald-100'>{homeworkDoneStudents.length}</p>
+                      </div>
+                      <div className='p-4 rounded-xl bg-amber-50 border border-amber-100 dark:bg-amber-900/20 dark:border-amber-800'>
+                        <p className='text-xs font-bold text-amber-800 dark:text-amber-400 uppercase tracking-wider mb-1'>Pending</p>
+                        <p className='text-2xl font-bold text-amber-900 dark:text-amber-100'>{homeworkPendingStudents.length}</p>
+                      </div>
+                    </div>
+                  </div>
                 </div>
-                <div className='grid gap-4 md:grid-cols-2 mb-4'>
-                  <select value={linkStudentId} onChange={(e) => setLinkStudentId(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>Select Student</option>
-                    {filteredLinkStudents.map((s) => <option key={s.id} value={s.id}>{s.name} - {s.className} {s.section || s.sec} ({s.academicYear || 'No Year'})</option>)}
-                  </select>
-                  <select value={linkParentId} onChange={(e) => setLinkParentId(e.target.value)} className='px-3 py-2 border border-blue-300 rounded-md text-blue-900'>
-                    <option value=''>Select Parent</option>
-                    {parents
-                      .filter((p) => !user.schoolName || normalize(p.schoolName) === normalize(user.schoolName))
-                      .map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-                  </select>
-                </div>
-                <button onClick={handleLinkParent} className='mb-4 bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700'>
-                  Link Parent To Student
-                </button>
-                <p className='mb-4 text-sm text-blue-800'>
-                  Showing {filteredLinkStudents.length} student{filteredLinkStudents.length === 1 ? '' : 's'} for linking.
-                </p>
-                <div className='space-y-2'>
-                  {overviewStudents.filter(s => s.parentId).length === 0 ? (
-                    <p className='text-blue-800'>No parent-child connections found.</p>
-                  ) : (
-                    overviewStudents.filter(s => s.parentId).map((s) => {
-                      const parentName = getParentName(s.parentId);
-                      return (
-                        <div key={s.id} className='flex justify-between items-center p-3 border border-blue-200 rounded bg-blue-50'>
-                          <div>
-                            <p className='font-medium text-blue-900'>{s.name}</p>
-                            <p className='text-xs text-blue-800'>Child</p>
+
+                {/* Right Column */}
+                <div className='space-y-6'>
+                  {/* Recent Materials */}
+                  <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700' : ''} p-6 rounded-2xl border border-slate-100 shadow-sm`}>
+                    <div className='flex items-center justify-between mb-4'>
+                      <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Recent Materials</h3>
+                      <button onClick={() => setActiveTab('materials')} className='text-xs font-semibold text-blue-600 hover:underline'>View All →</button>
+                    </div>
+                    <div className='space-y-3'>
+                      {overviewFilteredMaterials.slice(0, 3).length === 0 ? (
+                        <p className='text-sm text-slate-500 py-4'>No materials uploaded yet.</p>
+                      ) : (
+                        overviewFilteredMaterials.slice(0, 3).map((mat) => (
+                          <div key={mat.id} className='flex items-center gap-3 p-3 rounded-xl bg-slate-50 dark:bg-gray-700/50 border border-slate-100 dark:border-gray-600'>
+                            <div className='w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600'>
+                              📚
+                            </div>
+                            <div className='flex-1 min-w-0'>
+                              <p className='text-sm font-semibold truncate'>{mat.title}</p>
+                              <p className='text-xs text-slate-500'>{mat.className} | {mat.type}</p>
+                            </div>
                           </div>
-                          <div className='text-right'>
-                            <p className='font-semibold text-blue-900'>{parentName || 'Unknown Parent'}</p>
-                            <p className='text-xs text-blue-800'>Parent</p>
-                            <button onClick={() => handleUnlinkParent(s.id)} className='mt-2 text-xs font-medium text-red-600 hover:text-red-800'>
-                              Unlink
-                            </button>
-                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Active Quizzes */}
+                  <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700' : ''} p-6 rounded-2xl border border-slate-100 shadow-sm`}>
+                    <div className='flex items-center justify-between mb-4'>
+                      <h3 className={`font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Active Quizzes</h3>
+                      <button onClick={() => setActiveTab('lms')} className='text-xs font-semibold text-blue-600 hover:underline'>Open LMS →</button>
+                    </div>
+                    <div className='space-y-3'>
+                      {activeQuizzesCount === 0 ? (
+                        <p className='text-sm text-slate-500 py-4'>No active quizzes found.</p>
+                      ) : (
+                        <div className='p-4 rounded-xl bg-purple-50 dark:bg-purple-900/20 border border-purple-100 dark:border-purple-800'>
+                          <p className='text-sm font-semibold text-purple-900 dark:text-purple-100'>Currently managing {activeQuizzesCount} active assessments.</p>
+                          <p className='text-xs text-purple-700 dark:text-purple-400 mt-1'>Check LMS tab for detailed performance reports.</p>
                         </div>
-                      );
-                    })
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Recent Homework Assignments (Condensed) */}
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700' : ''} p-6 rounded-2xl border border-slate-100 shadow-sm`}>
+                <h2 className={`text-lg font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Recent Homework Assignments</h2>
+                <div className='grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4'>
+                  {overviewFilteredHomework.slice(0, 3).length === 0 ? (
+                    <p className='text-slate-500 col-span-full'>No homework assigned for this class.</p>
+                  ) : (
+                    overviewFilteredHomework.slice(0, 3).map((hw) => (
+                      <div key={hw.id} className='p-4 rounded-xl border border-blue-50 dark:border-gray-700 bg-blue-50/20 dark:bg-gray-700/20'>
+                        <p className='font-semibold text-blue-900 dark:text-blue-100 truncate'>{hw.title}</p>
+                        <p className='text-xs text-blue-700 dark:text-blue-400 mt-1'>Due: {hw.dueDate} | Class: {hw.className}</p>
+                        <p className='text-xs text-slate-600 dark:text-gray-400 mt-2 line-clamp-2'>{hw.description}</p>
+                      </div>
+                    ))
                   )}
                 </div>
               </div>
+            </div>
+          )}
 
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
-                <h2 className='text-lg font-semibold text-blue-900 mb-4'>Homework Assignments</h2>
-                <div className='space-y-3'>
-                  {overviewFilteredHomework.length === 0 ? (
-                    <p className='text-blue-800'>No homework found for this class/section.</p>
-                  ) : overviewFilteredHomework.map((hw) => (
-                    <div key={hw.id} className='border border-blue-200 rounded p-3 bg-blue-50/30'>
-                      <div>
-                        <p className='font-semibold'>{hw.title}</p>
-                        <p className='text-sm text-blue-800'>Due: {hw.dueDate} | Class: {hw.className || 'N/A'} | Section: {hw.section || 'N/A'}</p>
-                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mt-1`}>{hw.description}</p>
-                        {renderFilePreview(hw.attachmentUrl, hw.attachmentName, hw.attachmentType)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-blue-200 mt-6`}>
-                <h2 className='text-lg font-semibold text-blue-900 mb-4'>Study Materials</h2>
-                <div className='space-y-3'>
-                  {overviewFilteredMaterials.length === 0 ? (
-                    <p className='text-blue-800'>No study material found for this class/section.</p>
-                  ) : overviewFilteredMaterials.map((mat) => (
-                    <div key={mat.id} className='border border-blue-200 rounded p-3 bg-blue-50/30'>
-                      <div>
-                        <p className='font-semibold text-blue-900'>{mat.title} <span className='text-xs text-blue-700'>({mat.type})</span></p>
-                        <p className='text-sm text-blue-800'>Class: {mat.className || 'N/A'} | Section: {mat.section || 'N/A'}</p>
-                        <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'} mt-1`}>{mat.description}</p>
-                        {renderFilePreview(mat.url, mat.fileName, mat.type)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </>
+          {/* LMS TAB */}
+          {activeTab === 'lms' && (
+            <LMSDashboard 
+              user={user} 
+              isDarkMode={isDarkMode} 
+              showMessage={showMessage} 
+              classOptions={classOptions}
+              yearOptions={yearOptions}
+            />
           )}
 
           {/* HOMEWORK TAB */}
@@ -1460,6 +1515,8 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
               </div>
             </div>
           )}
+
+
         </div>
       </main>
     </div>
