@@ -1,7 +1,7 @@
 'use client';
 import { useMemo, useState, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
-import { getFeeStructure, updateFeeStructure, sendNotification, getFeePayments, updateFeePaymentStatus, updateUserProfilePhoto } from '../../components/auth/authService';
+import { getFeeStructure, updateFeeStructure, sendNotification, getFeePayments, updateFeePaymentStatus, updateUserProfilePhoto, getNotifications } from '../../components/auth/authService';
 
 import StaffTeacherAttendance from './StaffTeacherAttendance';
 import StaffHostel from './StaffHostel';
@@ -69,7 +69,10 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
     }
   };
 
-  const [notification, setNotification] = useState({ title: '', message: '', targetRole: 'all' });
+  const [notification, setNotification] = useState({ title: '', message: '', targetRole: 'all', notificationDate: new Date().toISOString().split('T')[0] });
+  const [notificationAttachment, setNotificationAttachment] = useState(null);
+  const [notificationRecordFilterDate, setNotificationRecordFilterDate] = useState('');
+  const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
   const [staffClassFilter, setStaffClassFilter] = useState('');
   const [staffSectionFilter, setStaffSectionFilter] = useState('');
 
@@ -101,8 +104,41 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   const [availableClasses, setAvailableClasses] = useState(['Nursery','LKG','UKG','1','2','3','4','5','6','7','8','9','10','11','12']);
   const staffClassOptions = adminAssignedClasses.length > 0 ? adminAssignedClasses : availableClasses;
 
+  const schoolNotifications = useMemo(() => {
+    return getNotifications()
+      .filter((item) => !item.schoolName || normalize(item.schoolName) === normalize(user.schoolName))
+      .sort((a, b) => new Date(b.sentAt || b.notificationDate || 0) - new Date(a.sentAt || a.notificationDate || 0));
+  }, [notificationRefreshKey, user.schoolName]);
+
+  const filteredNotificationRecords = useMemo(() => {
+    if (!notificationRecordFilterDate) return schoolNotifications;
+    return schoolNotifications.filter((item) => {
+      const itemDate = item.notificationDate || (item.sentAt ? item.sentAt.split('T')[0] : '');
+      return itemDate === notificationRecordFilterDate;
+    });
+  }, [schoolNotifications, notificationRecordFilterDate]);
+
+  const handleNotificationAttachmentChange = (e) => {
+    const file = e.target.files?.[0];
+    if (!file) {
+      setNotificationAttachment(null);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      setNotificationAttachment({
+        name: file.name,
+        type: file.type || 'application/octet-stream',
+        size: file.size,
+        dataUrl: reader.result
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSendNotification = () => {
-    if (!notification.title || !notification.message) {
+    if (!notification.title || !notification.message || !notification.notificationDate) {
       showMessage('Please fill notification fields', 'error');
       return;
     }
@@ -110,11 +146,15 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       title: notification.title,
       message: notification.message,
       targetRole: notification.targetRole,
+      notificationDate: notification.notificationDate,
+      attachment: notificationAttachment,
       senderId: user.id
     });
     if (result.success) {
       showMessage('Notification sent successfully!');
-      setNotification({ title: '', message: '', targetRole: 'all' });
+      setNotification({ title: '', message: '', targetRole: 'all', notificationDate: new Date().toISOString().split('T')[0] });
+      setNotificationAttachment(null);
+      setNotificationRefreshKey((value) => value + 1);
     } else {
       showMessage(result.message, 'error');
     }
@@ -129,6 +169,19 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
     { label: 'Fees Control', tab: 'fees', icon: '💰' },
     { label: 'Notifications', tab: 'notifications', icon: '🔔' }
   ];
+
+  const formatNotificationDate = (value) => {
+    if (!value) return 'No date';
+    const parsed = new Date(value);
+    return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleDateString();
+  };
+
+  const formatAttachmentSize = (size = 0) => {
+    if (!size) return '';
+    if (size < 1024) return `${size} B`;
+    if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`;
+    return `${(size / (1024 * 1024)).toFixed(1)} MB`;
+  };
 
   return (
     <div className={`flex min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
@@ -351,11 +404,15 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
           )}
 
           {activeTab === 'notifications' && (
-            <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-8 rounded-3xl border border-slate-100 shadow-xl max-w-2xl`}>
-              <h2 className="text-xl font-black mb-6 flex items-center gap-2">
+            <div className="grid gap-8 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+              <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-8 rounded-3xl border border-slate-100 shadow-xl`}>
+              <h2 className="text-xl font-black mb-2 flex items-center gap-2">
                 <span className="w-10 h-10 rounded-2xl bg-orange-100 flex items-center justify-center text-xl">🔔</span>
                 Broadcast Notification
               </h2>
+              <p className={`mb-6 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
+                Date, audience, attachment, aur message ke saath notification bhejiye.
+              </p>
               <div className='space-y-4'>
                 <input
                   type='text'
@@ -371,22 +428,146 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                   className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                   rows={4}
                 />
-                <select
-                  value={notification.targetRole}
-                  onChange={(e) => setNotification({...notification, targetRole: e.target.value})}
-                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
-                >
-                  <option value='all'>All Users</option>
-                  <option value='students'>Students Only</option>
-                  <option value='parents'>Parents Only</option>
-                  <option value='teachers'>Teachers Only</option>
-                </select>
+                <div className="grid gap-4 md:grid-cols-2">
+                  <div>
+                    <label className={`mb-2 block text-xs font-bold uppercase ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>Notice Date</label>
+                    <input
+                      type='date'
+                      value={notification.notificationDate}
+                      onChange={(e) => setNotification({ ...notification, notificationDate: e.target.value })}
+                      className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                    />
+                  </div>
+                  <div>
+                    <label className={`mb-2 block text-xs font-bold uppercase ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>Target Role</label>
+                    <select
+                      value={notification.targetRole}
+                      onChange={(e) => setNotification({...notification, targetRole: e.target.value})}
+                      className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                    >
+                      <option value='all'>All Users</option>
+                      <option value='students'>Students Only</option>
+                      <option value='parents'>Parents Only</option>
+                      <option value='teachers'>Teachers Only</option>
+                      <option value='staff'>Staff Only</option>
+                    </select>
+                  </div>
+                </div>
+                <div className={`rounded-2xl border border-dashed p-4 ${isDarkMode ? 'border-gray-600 bg-gray-700/40' : 'border-slate-300 bg-slate-50'}`}>
+                  <label className={`mb-2 block text-xs font-bold uppercase ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>Attachment Upload</label>
+                  <input
+                    type="file"
+                    onChange={handleNotificationAttachmentChange}
+                    className={`w-full text-sm ${isDarkMode ? 'text-gray-200' : 'text-slate-700'}`}
+                  />
+                  {notificationAttachment && (
+                    <div className={`mt-3 rounded-xl px-4 py-3 text-sm ${isDarkMode ? 'bg-gray-800 text-gray-200' : 'bg-white text-slate-700'}`}>
+                      <p className="font-semibold">{notificationAttachment.name}</p>
+                      <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>
+                        {notificationAttachment.type || 'File'} {formatAttachmentSize(notificationAttachment.size) ? `- ${formatAttachmentSize(notificationAttachment.size)}` : ''}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => setNotificationAttachment(null)}
+                        className="mt-2 text-xs font-semibold text-red-500 hover:text-red-600"
+                      >
+                        Remove attachment
+                      </button>
+                    </div>
+                  )}
+                </div>
                 <button
                   onClick={handleSendNotification}
                   className="w-full bg-orange-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-orange-500/30 hover:bg-orange-700 transition-all active:scale-[0.98]"
                 >
                   Send Broadcast
                 </button>
+              </div>
+              </div>
+
+              <div className={`p-8 rounded-3xl border shadow-xl ${isDarkMode ? 'bg-gray-800 border-gray-700 text-white' : 'bg-white border-slate-100'}`}>
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                  <div>
+                    <h2 className="text-xl font-black">Notification Record Book</h2>
+                    <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
+                      Yahan sabhi notification details local record me store rahengi.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 md:items-end">
+                    <label className={`text-xs font-bold uppercase ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>Filter By Date</label>
+                    <input
+                      type="date"
+                      value={notificationRecordFilterDate}
+                      onChange={(e) => setNotificationRecordFilterDate(e.target.value)}
+                      className={`rounded-xl border px-4 py-3 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-200 text-slate-800'}`}
+                    />
+                    {notificationRecordFilterDate && (
+                      <button
+                        type="button"
+                        onClick={() => setNotificationRecordFilterDate('')}
+                        className="text-xs font-semibold text-blue-600 hover:text-blue-700"
+                      >
+                        Clear filter
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-4 md:grid-cols-3">
+                  <div className={`rounded-2xl p-4 ${isDarkMode ? 'bg-gray-900' : 'bg-slate-50'}`}>
+                    <p className={`text-xs font-bold uppercase ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>Total Records</p>
+                    <p className="mt-2 text-2xl font-black">{schoolNotifications.length}</p>
+                  </div>
+                  <div className={`rounded-2xl p-4 ${isDarkMode ? 'bg-gray-900' : 'bg-slate-50'}`}>
+                    <p className={`text-xs font-bold uppercase ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>Filtered Records</p>
+                    <p className="mt-2 text-2xl font-black">{filteredNotificationRecords.length}</p>
+                  </div>
+                  <div className={`rounded-2xl p-4 ${isDarkMode ? 'bg-gray-900' : 'bg-slate-50'}`}>
+                    <p className={`text-xs font-bold uppercase ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>With Attachment</p>
+                    <p className="mt-2 text-2xl font-black">{schoolNotifications.filter((item) => item.attachmentDataUrl).length}</p>
+                  </div>
+                </div>
+
+                <div className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+                  {filteredNotificationRecords.length === 0 ? (
+                    <div className={`rounded-2xl border p-6 text-sm ${isDarkMode ? 'border-gray-700 text-gray-300' : 'border-slate-200 text-slate-500'}`}>
+                      Selected date ke liye koi notification record nahi mila.
+                    </div>
+                  ) : (
+                    filteredNotificationRecords.map((item) => (
+                      <div key={item.id} className={`rounded-2xl border p-5 ${isDarkMode ? 'border-gray-700 bg-gray-900/60' : 'border-slate-200 bg-slate-50/70'}`}>
+                        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                          <div>
+                            <h3 className="text-lg font-black">{item.title}</h3>
+                            <p className={`mt-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{item.message}</p>
+                          </div>
+                          <span className={`inline-flex rounded-full px-3 py-1 text-xs font-bold uppercase ${isDarkMode ? 'bg-gray-700 text-gray-200' : 'bg-white text-slate-700 border border-slate-200'}`}>
+                            {item.targetRole}
+                          </span>
+                        </div>
+                        <div className={`mt-4 grid gap-2 text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-500'} md:grid-cols-2`}>
+                          <p>Notice Date: {formatNotificationDate(item.notificationDate || item.sentAt)}</p>
+                          <p>Sent On: {formatNotificationDate(item.sentAt)}</p>
+                          <p>From: {item.senderName} ({item.senderRole})</p>
+                          <p>School: {item.schoolName || user.schoolName || 'N/A'}</p>
+                        </div>
+                        {item.attachmentDataUrl && (
+                          <div className={`mt-4 rounded-xl p-4 ${isDarkMode ? 'bg-gray-800' : 'bg-white border border-slate-200'}`}>
+                            <p className="text-sm font-semibold">{item.attachmentName || 'Attachment'}</p>
+                            <p className={`mt-1 text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>{item.attachmentType || 'File attachment'}</p>
+                            <a
+                              href={item.attachmentDataUrl}
+                              download={item.attachmentName || 'notification-attachment'}
+                              className="mt-3 inline-flex rounded-lg bg-blue-600 px-4 py-2 text-xs font-bold text-white hover:bg-blue-700"
+                            >
+                              Download Attachment
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           )}

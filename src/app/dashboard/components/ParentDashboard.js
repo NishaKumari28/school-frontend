@@ -505,8 +505,17 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                         </span>
                       </div>
                       <p className='mt-3 text-xs text-slate-500'>
-                        From {notification.senderName} ({notification.senderRole}) on {new Date(notification.sentAt).toLocaleDateString()}
+                        From {notification.senderName} ({notification.senderRole}) on {new Date(notification.notificationDate || notification.sentAt).toLocaleDateString()}
                       </p>
+                      {notification.attachmentDataUrl && (
+                        <a
+                          href={notification.attachmentDataUrl}
+                          download={notification.attachmentName || 'notification-attachment'}
+                          className='mt-3 inline-flex rounded-md bg-blue-600 px-3 py-2 text-xs font-semibold text-white hover:bg-blue-700'
+                        >
+                          Download Attachment
+                        </a>
+                      )}
                     </div>
                   ))
                 )}

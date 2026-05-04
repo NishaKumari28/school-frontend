@@ -265,9 +265,10 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
 
       {/* FEE SETUP MODAL */}
       {setupStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
           <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={()=>setSetupStudent(null)}/>
-          <div className={`relative w-full max-w-2xl my-8 p-8 rounded-[2rem] shadow-2xl ${isDarkMode?'bg-gray-800 border border-gray-700':'bg-white'}`}>
+          <div className={`relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] shadow-2xl ${isDarkMode?'bg-gray-800 border border-gray-700':'bg-white'}`}>
+            <div className="min-h-0 flex-1 overflow-y-auto p-8">
             <h3 className={`text-xl font-black mb-1 ${primary}`}>Fee Structure</h3>
             <p className={`text-xs font-bold mb-6 ${secondary}`}>{setupStudent.name} · Class {setupStudent.className}</p>
 
@@ -312,7 +313,9 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
               )}
             </div>
 
-            <div className="flex gap-4">
+            </div>
+
+            <div className={`flex gap-4 border-t px-8 py-6 ${isDarkMode?'border-gray-700':'border-slate-200'}`}>
               <button onClick={()=>setSetupStudent(null)} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase ${isDarkMode?'bg-gray-700 text-gray-300':'bg-slate-100 text-slate-600'}`}>Cancel</button>
               <button onClick={handleSaveSetup} className="flex-[2] py-3 rounded-xl bg-emerald-600 text-white font-black text-xs uppercase shadow-lg">Save & Apply</button>
             </div>

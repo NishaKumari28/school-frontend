@@ -840,7 +840,7 @@ export function setNotifications(notifications) {
   localStorage.setItem('school-notifications', JSON.stringify(sortLatestFirst(notifications)));
 }
 
-export function sendNotification({ title, message, targetRole, senderId }) {
+export function sendNotification({ title, message, targetRole, senderId, notificationDate, attachment }) {
   if (typeof window === 'undefined') return { success: false, message: 'Cannot send notification server side' };
 
   const currentUser = getCurrentUser();
@@ -849,6 +849,7 @@ export function sendNotification({ title, message, targetRole, senderId }) {
   }
 
   const notifications = getNotifications();
+  const normalizedNotificationDate = notificationDate || new Date().toISOString().split('T')[0];
   const newNotification = {
     id: Date.now(),
     title,
@@ -857,7 +858,12 @@ export function sendNotification({ title, message, targetRole, senderId }) {
     senderId: currentUser.id,
     senderName: currentUser.name,
     senderRole: currentUser.role,
+    schoolName: currentUser.schoolName || '',
+    notificationDate: normalizedNotificationDate,
     sentAt: new Date().toISOString(),
+    attachmentName: attachment?.name || '',
+    attachmentType: attachment?.type || '',
+    attachmentDataUrl: attachment?.dataUrl || '',
     readBy: []
   };
 
