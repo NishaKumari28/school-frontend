@@ -2,6 +2,7 @@
 import { useMemo, useState, useEffect } from 'react';
 import AnalyticsChart from './Charts';
 import LMSDashboard from './LMSDashboard';
+import UserTransportLog from './UserTransportLog';
 import quizDataUtils from '../utils/quizDataUtils';
 
 
@@ -251,7 +252,8 @@ const students = allUsers.filter(u => u.role === 'student');
     { label: 'Homework', tab: 'homework' },
     { label: 'Attendance', tab: 'attendance' },
     { label: 'Learning Materials', tab: 'materials' },
-    { label: 'LMS', tab: 'lms' }
+    { label: 'LMS', tab: 'lms' },
+    { label: 'Transport', tab: 'transport' }
   ];
 
   const classStudents = useMemo(() => {
@@ -1403,6 +1405,17 @@ const students = allUsers.filter(u => u.role === 'student');
                 series={[{ dataKey: 'count', name: 'Students', color: '#2563eb' }]}
                 height={280}
               />
+            </div>
+          )}
+
+          {/* TRANSPORT TAB */}
+          {activeTab === 'transport' && (
+            <div className="space-y-6">
+               <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 p-8 text-white shadow-xl mb-8">
+                  <h2 className="text-3xl font-black mb-2">Transport Commute Log</h2>
+                  <p className="text-blue-100 font-bold opacity-90">Record your daily bus boarding and dropping status here. Your logs are synced with the transport office.</p>
+               </div>
+               <UserTransportLog isDarkMode={isDarkMode} user={user} showMessage={showMessage} />
             </div>
           )}
 

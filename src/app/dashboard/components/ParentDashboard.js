@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
+import UserTransportLog from './UserTransportLog';
 import {
   getAttendanceList,
   getHomeworkList,
@@ -169,7 +170,8 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
     { label: 'Overview', tab: 'overview' },
     { label: 'Child Progress', tab: 'progress' },
     { label: 'School Notices', tab: 'notifications' },
-    { label: 'Fee Status', tab: 'fees' }
+    { label: 'Fee Status', tab: 'fees' },
+    { label: 'Transport', tab: 'transport' }
   ];
 
   const handleProfilePhotoChange = (e) => {
@@ -501,6 +503,16 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                   ))
                 )}
               </div>
+            </div>
+          )}
+
+          {activeTab === 'transport' && (
+            <div className="space-y-6">
+               <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-700 p-8 text-white shadow-xl mb-8">
+                  <h2 className="text-3xl font-black mb-2">Child Transport Tracking</h2>
+                  <p className="text-indigo-100 font-bold opacity-90">Manage your child's daily school bus boarding and dropping status. This ensures safety and keeps the school office informed.</p>
+               </div>
+               <UserTransportLog isDarkMode={isDarkMode} user={linkedChild} showMessage={showMessage} />
             </div>
           )}
 

@@ -73,11 +73,11 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   const [staffClassFilter, setStaffClassFilter] = useState('');
   const [staffSectionFilter, setStaffSectionFilter] = useState('');
 
-  const students = allUsers.filter(u => u.role === 'student');
-  const teachers = allUsers.filter(u => u.role === 'teacher');
-  const parents = allUsers.filter(u => u.role === 'parents');
-
   const normalize = (value) => String(value ?? '').trim().toLowerCase();
+  
+  const students = allUsers.filter(u => u.role === 'student' && normalize(u.schoolName) === normalize(user.schoolName));
+  const teachers = allUsers.filter(u => u.role === 'teacher' && normalize(u.schoolName) === normalize(user.schoolName));
+  const parents = allUsers.filter(u => u.role === 'parents' && normalize(u.schoolName) === normalize(user.schoolName));
   
   const parseMultiValueField = (value) => {
     if (!value) return [];
@@ -131,7 +131,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   ];
 
   return (
-    <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
+    <div className={`flex min-h-screen ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
       <aside className={`w-80 flex-shrink-0 border-r shadow-lg z-40 flex flex-col h-screen sticky top-0 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
         <div className={`mb-6 pb-4 border-b ${isDarkMode ? 'border-gray-700' : 'border-blue-200'}`}>
           <div className="relative inline-block mt-4 mb-3 text-center w-full">
@@ -208,7 +208,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto p-8 relative">
+      <main className="flex-1 min-w-0 p-8 relative overflow-x-hidden">
         <div className={`mb-8 border-b-2 ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}/50 pb-4`}>
           <nav className="flex flex-wrap gap-4">
             {navButtons.map((btn) => (
@@ -240,7 +240,6 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
           {activeTab === 'overview' && (
             <div className="space-y-8 animate-in fade-in duration-500">
                <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
-                <DashboardCard title="Total Students" icon="🎓" value={students.length} color="blue" />
                 <DashboardCard 
                   title="Active Teachers" 
                   icon="🧑‍🏫" 
@@ -325,15 +324,20 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
           )}
 
           {activeTab === 'hostel' && (
-            <StaffHostel isDarkMode={isDarkMode} showMessage={showMessage} />
+            <StaffHostel isDarkMode={isDarkMode} showMessage={showMessage} students={students} />
           )}
 
           {activeTab === 'library' && (
-            <StaffLibrary isDarkMode={isDarkMode} showMessage={showMessage} allUsers={allUsers} />
+            <StaffLibrary isDarkMode={isDarkMode} showMessage={showMessage} allUsers={allUsers} students={students} teachers={teachers} staffClassOptions={staffClassOptions} />
           )}
 
           {activeTab === 'transport' && (
-            <StaffTransport isDarkMode={isDarkMode} showMessage={showMessage} />
+            <StaffTransport 
+              isDarkMode={isDarkMode} 
+              showMessage={showMessage} 
+              students={students} 
+              teachers={teachers} 
+            />
           )}
 
           {activeTab === 'fees' && (
