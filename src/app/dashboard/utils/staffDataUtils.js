@@ -19,7 +19,10 @@ const STORAGE_KEYS = {
   TRANSPORT_ROUTES: 'school_transport_routes',
   TRANSPORT_PASSENGERS: 'school_transport_passengers',
   TRANSPORT_ATTENDANCE: 'school_transport_attendance_logs',
-  TEACHER_ATTENDANCE: 'school_teacher_attendance'
+  TEACHER_ATTENDANCE: 'school_teacher_attendance',
+  FEE_STRUCTURES: 'school_fee_structures_v2',
+  FEE_PAYMENT_PLANS: 'school_fee_payment_plans',
+  FEE_INVOICES: 'school_fee_invoices'
 };
 
 // --- COMMON UTILS ---
@@ -381,6 +384,93 @@ export const teacherAttendanceUtils = {
     setLocalData(STORAGE_KEYS.TEACHER_ATTENDANCE, attendance);
   }
 };
+
+// --- FEE MANAGEMENT ---
+export const feeUtils = {
+  // Fee Structure (per student)
+  getAllStructures: () => getLocalData(STORAGE_KEYS.FEE_STRUCTURES),
+  getStructure: (studentId) => {
+    const all = feeUtils.getAllStructures();
+    return all.find(s => s.studentId === studentId) || null;
+  },
+  saveStructure: (data) => {
+    const all = feeUtils.getAllStructures();
+    const idx = all.findIndex(s => s.studentId === data.studentId);
+    const total = (
+      (parseFloat(data.tuitionFee) || 0) +
+      (parseFloat(data.libraryFee) || 0) +
+      (parseFloat(data.electricityBill) || 0) +
+      (parseFloat(data.waterBill) || 0) +
+      (parseFloat(data.dressFee) || 0) +
+      (parseFloat(data.bookFee) || 0) +
+      (parseFloat(data.transportFee) || 0) +
+      (parseFloat(data.fine) || 0)
+    );
+    const record = { ...data, totalFee: total, updatedAt: new Date().toISOString() };
+    if (idx !== -1) all[idx] = record;
+    else all.push({ ...record, id: generateId() });
+    setLocalData(STORAGE_KEYS.FEE_STRUCTURES, all);
+    return record;
+  },
+  deleteStructure: (studentId) => {
+    const all = feeUtils.getAllStructures().filter(s => s.studentId !== studentId);
+    setLocalData(STORAGE_KEYS.FEE_STRUCTURES, all);
+  },
+
+  // Payment Plans
+  getAllPlans: () => getLocalData(STORAGE_KEYS.FEE_PAYMENT_PLANS),
+  getPlan: (studentId) => {
+    return feeUtils.getAllPlans().find(p => p.studentId === studentId) || null;
+  },
+  savePlan: (data) => {
+    const all = feeUtils.getAllPlans();
+    const idx = all.findIndex(p => p.studentId === data.studentId);
+    const record = { ...data, updatedAt: new Date().toISOString() };
+    if (idx !== -1) all[idx] = record;
+    else all.push({ ...record, id: generateId() });
+    setLocalData(STORAGE_KEYS.FEE_PAYMENT_PLANS, all);
+  },
+
+  // Invoices
+  getAllInvoices: () => getLocalData(STORAGE_KEYS.FEE_INVOICES),
+  getStudentInvoices: (studentId) => {
+    return feeUtils.getAllInvoices().filter(inv => inv.studentId === studentId);
+  },
+  generateInvoice: (studentId, studentName, structure, plan) => {
+    const invoices = feeUtils.getAllInvoices();
+    const inv = {
+      id: generateId(),
+      invoiceNo: `INV-${Date.now()}`,
+      studentId,
+      studentName,
+      generatedAt: new Date().toISOString(),
+      dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      status: 'unpaid',
+      ...structure,
+      paymentPlan: plan?.planType || 'one_time',
+      installmentMonths: plan?.installmentMonths || 1,
+      paidAmount: 0,
+    };
+    invoices.push(inv);
+    setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
+    return inv;
+  },
+  markInvoicePaid: (invoiceId, amount) => {
+    const invoices = feeUtils.getAllInvoices();
+    const idx = invoices.findIndex(i => i.id === invoiceId);
+    if (idx !== -1) {
+      invoices[idx].paidAmount = (parseFloat(invoices[idx].paidAmount) || 0) + parseFloat(amount);
+      invoices[idx].status = invoices[idx].paidAmount >= invoices[idx].totalFee ? 'paid' : 'partial';
+      invoices[idx].lastPaidAt = new Date().toISOString();
+      setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
+    }
+  },
+  deleteInvoice: (invoiceId) => {
+    const all = feeUtils.getAllInvoices().filter(i => i.id !== invoiceId);
+    setLocalData(STORAGE_KEYS.FEE_INVOICES, all);
+  }
+};
+
 
 // --- INITIALIZATION ---
 export const initializeSampleData = () => {
