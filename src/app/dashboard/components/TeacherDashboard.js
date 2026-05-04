@@ -3,6 +3,8 @@ import { useMemo, useState, useEffect } from 'react';
 import AnalyticsChart from './Charts';
 import LMSDashboard from './LMSDashboard';
 import UserTransportLog from './UserTransportLog';
+import TransportStatsPanel from './TransportStatsPanel';
+import { transportUtils } from '../utils/staffDataUtils';
 import quizDataUtils from '../utils/quizDataUtils';
 
 
@@ -586,6 +588,12 @@ const students = allUsers.filter(u => u.role === 'student');
       return quizDataUtils.getAllQuizzes().filter(q => q.status === 'active').length;
     } catch { return 0; }
   }, []);
+
+  // Transport: find this teacher's passenger record id
+  const myTransportPassengerIds = useMemo(() => {
+    const p = transportUtils.getPassengers().find(x => x.name === user.name);
+    return p ? [p.id] : [];
+  }, [user.name]);
 
   const stats = [
     { label: 'Total Students', value: overviewStudents.length, icon: '👥', color: 'from-blue-500 to-blue-600' },
@@ -1411,11 +1419,16 @@ const students = allUsers.filter(u => u.role === 'student');
           {/* TRANSPORT TAB */}
           {activeTab === 'transport' && (
             <div className="space-y-6">
-               <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 p-8 text-white shadow-xl mb-8">
+               <div className="rounded-2xl bg-gradient-to-r from-blue-600 to-indigo-700 p-8 text-white shadow-xl">
                   <h2 className="text-3xl font-black mb-2">Transport Commute Log</h2>
                   <p className="text-blue-100 font-bold opacity-90">Record your daily bus boarding and dropping status here. Your logs are synced with the transport office.</p>
                </div>
                <UserTransportLog isDarkMode={isDarkMode} user={user} showMessage={showMessage} />
+               <TransportStatsPanel
+                 isDarkMode={isDarkMode}
+                 showMessage={showMessage}
+                 passengerIds={myTransportPassengerIds}
+               />
             </div>
           )}
 

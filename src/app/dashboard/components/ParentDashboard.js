@@ -2,6 +2,8 @@
 import { useMemo, useState, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
 import UserTransportLog from './UserTransportLog';
+import TransportStatsPanel from './TransportStatsPanel';
+import { transportUtils } from '../utils/staffDataUtils';
 import {
   getAttendanceList,
   getHomeworkList,
@@ -153,6 +155,12 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
     const pendingAmount = Math.max(totalFee - paidAmount, 0);
     return { totalFee, paidAmount, inProcessAmount, pendingAmount };
   }, [feeDetails, feePayments]);
+
+  // Transport: find this child's passenger record id
+  const childTransportPassengerIds = useMemo(() => {
+    const p = transportUtils.getPassengers().find(x => x.name === linkedChild?.name);
+    return p ? [p.id] : [];
+  }, [linkedChild?.name]);
 
   const latestPayment = feePayments[0] || null;
   const latestPaymentMode = latestPayment
@@ -508,11 +516,16 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
 
           {activeTab === 'transport' && (
             <div className="space-y-6">
-               <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-700 p-8 text-white shadow-xl mb-8">
+               <div className="rounded-2xl bg-gradient-to-r from-indigo-600 to-blue-700 p-8 text-white shadow-xl">
                   <h2 className="text-3xl font-black mb-2">Child Transport Tracking</h2>
                   <p className="text-indigo-100 font-bold opacity-90">Manage your child's daily school bus boarding and dropping status. This ensures safety and keeps the school office informed.</p>
                </div>
                <UserTransportLog isDarkMode={isDarkMode} user={linkedChild} showMessage={showMessage} />
+               <TransportStatsPanel
+                 isDarkMode={isDarkMode}
+                 showMessage={showMessage}
+                 passengerIds={childTransportPassengerIds}
+               />
             </div>
           )}
 

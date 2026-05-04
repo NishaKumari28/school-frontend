@@ -1,6 +1,7 @@
 'use client';
 import { useState, useMemo } from 'react';
 import { transportUtils } from '../utils/staffDataUtils';
+import TransportStatsPanel from './TransportStatsPanel';
 
 export default function StaffTransport({ isDarkMode, showMessage, students = [], teachers = [] }) {
   const [activeSubTab, setActiveSubTab] = useState('passengers');
@@ -113,10 +114,11 @@ export default function StaffTransport({ isDarkMode, showMessage, students = [],
       {/* 1. Sub Navigation */}
       <div className={`flex flex-wrap p-1.5 rounded-2xl w-fit ${isDarkMode ? 'bg-gray-800' : 'bg-slate-200'}`}>
         {[
-          { id: 'passengers', label: 'Registry', icon: '👥' },
-          { id: 'fleet', label: 'Bus List', icon: '🚍' },
+          { id: 'passengers', label: 'Registry',    icon: '👥' },
+          { id: 'fleet',      label: 'Bus List',    icon: '🚍' },
           { id: 'attendance', label: 'Daily Log Book', icon: '📖' },
-          { id: 'tracking', label: 'Live Map', icon: '🛰️' }
+          { id: 'reports',    label: 'Reports',     icon: '📊' },
+          { id: 'tracking',   label: 'Live Map',    icon: '🛰️' }
         ].map(tab => (
           <button 
             key={tab.id}
@@ -408,7 +410,18 @@ export default function StaffTransport({ isDarkMode, showMessage, students = [],
         </div>
       )}
 
-      {/* 5. Live Map Tab */}
+      {/* 5. Reports Tab */}
+      {activeSubTab === 'reports' && (
+        <div className="space-y-6">
+          <div>
+            <h2 className={`text-2xl font-black ${isDarkMode ? 'text-purple-400' : 'text-purple-700'}`}>Transport Reports</h2>
+            <p className={`text-sm font-bold ${secondaryText}`}>All students & teachers — pickup and drop activity</p>
+          </div>
+          <TransportStatsPanel isDarkMode={isDarkMode} passengerIds="all" showMessage={showMessage} />
+        </div>
+      )}
+
+      {/* 6. Live Map Tab */}
       {activeSubTab === 'tracking' && (
         <div className="space-y-6">
           <div className="flex flex-wrap justify-between items-center gap-4">
