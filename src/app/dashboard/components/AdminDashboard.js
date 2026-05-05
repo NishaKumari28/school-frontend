@@ -635,7 +635,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     setResetPasswordUser(null);
   };
 
-  /* ---------- Parent-Student link ---------- */
+  /* ---------- Parent-Student link ---------- 
   const handleLinkStudent = (sid, pid) => {
     if (!sid || !pid) return showMessage?.('Select both student and parent', 'error');
     const list = localUsers.map(u => {
@@ -652,7 +652,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     setInlineLinkStudent(''); 
     setInlineLinkParent(''); 
     refreshData();
-  };
+  };  */
 
   /* ---------- charts data ---------- */
   const attendanceData = useMemo(() => {
@@ -969,12 +969,12 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
             </div>
           </div>
 
-          {/* Logout Button */}
+          {/* Logout Button 
           <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <button className={`w-full py-2 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
               Logout
             </button>
-          </div>
+          </div>  */}
         </aside>
 
         {/* MAIN CONTENT */}
@@ -1475,7 +1475,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                     </div>
                   )}
 
-                  {/* Parent-Student Linking */}
+                  {/* Parent-Student Linking 
                   <div className={`mt-5 border rounded-lg p-3 ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-slate-50 border-slate-200'}`}>
                     <h3 className={`text-sm font-bold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Parent-Student Linking</h3>
                     <div className='grid gap-2 md:grid-cols-2 xl:grid-cols-4 mb-3'>
@@ -1518,7 +1518,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
 
                   <div className="mt-4">
                     <button onClick={handleCreateUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Create User</button>
-                  </div>
+                  </div>   */}
 
                   {/* CSV Upload */}
                   <div className="mt-4 p-3 bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg border-2 border-dashed border-emerald-200">

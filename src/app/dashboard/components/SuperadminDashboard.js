@@ -722,8 +722,8 @@ useEffect(() => {
       return;
     }
     
-    if (selectedAdminClasses.length === 0 || selectedAdminSections.length === 0 || selectedAdminAcademicYears.length === 0 || selectedAdminBoards.length === 0) {
-      showMessage("Please select at least one Class, Section, Academic Year, and Board for the admin", "error");
+    if (selectedAdminClasses.length === 0 || selectedAdminAcademicYears.length === 0 || selectedAdminBoards.length === 0) {
+      showMessage("Please select at least one Class, Academic Year, and Board for the admin", "error");
       return;
     }
     
@@ -738,7 +738,7 @@ useEffect(() => {
         board: selectedAdminBoards.join(", "),
         schoolType: newUser.schoolType,
         className: selectedAdminClasses.join(", "),
-        section: selectedAdminSections.join(", "),
+       // section: selectedAdminSections.join(", "),
         academicYear: selectedAdminAcademicYears.join(", ")
       } : u
     );
@@ -1228,9 +1228,9 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
       list = list.filter((u) => u.className === selectedClassFilter);
     }
     
-    if (selectedSectionFilter && listFilterRole === "student") {
-      list = list.filter((u) => u.section === selectedSectionFilter);
-    }
+   // if (selectedSectionFilter && listFilterRole === "student") {
+   //   list = list.filter((u) => u.section === selectedSectionFilter);
+  //  }
 
     if (selectedSubjectFilters.length > 0 && listFilterRole === "teacher") {
       list = list.filter((u) => selectedSubjectFilters.some(subject => matchesFilterValue(u.subject, subject)));
@@ -1934,13 +1934,13 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
           </div>
         </div>
 
-        {/* Logout Button */}
+        {/* Logout Button 
         <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
             Logout
           </button>
-        </div>
-      </aside>
+        </div> */}
+      </aside> 
 
       {/* MAIN CONTENT */}
       <main className="flex-1 overflow-y-auto p-6 min-h-screen">
@@ -2283,7 +2283,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                 </div>
                 
                 <div className="mb-4 grid gap-3 md:grid-cols-3">
-                  <div>
+                  {/* <div>
                     <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>School</label>
                     <select value={selectedAdminFilter} onChange={(e) => setSelectedAdminFilter(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
                       <option value="all">All Schools</option>
@@ -2291,8 +2291,8 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                         <option key={school} value={school}>{school}</option>
                       ))}
                     </select>
-                  </div>
-                  <div>
+                  </div> */}
+                  {/* <div>
                     <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Board</label>
                     <select value={selectedAdminBoardFilter} onChange={(e) => setSelectedAdminBoardFilter(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
                       <option value="">All Boards</option>
@@ -2300,7 +2300,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                         <option key={board} value={board}>{board}</option>
                       ))}
                     </select>
-                  </div>
+                  </div> */}
                   <div>
                     <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Search</label>
                     <input type="text" placeholder="Search by name, school, board, or phone..." value={adminSearchTerm} onChange={(e) => setAdminSearchTerm(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
@@ -2489,7 +2489,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   </div>
                 )}
 
-                {/* Parent-Student Linking */}
+                {/* Parent-Student Linking 
                 <div className={`mt-4 border rounded-lg p-3 ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
                   <h3 className={`text-sm font-bold mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Parent-Student Linking</h3>
                   <div className='grid gap-2 md:grid-cols-2 xl:grid-cols-4 mb-3'>
@@ -2532,7 +2532,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                 
                 <div className="mt-4">
                   <button onClick={handleCreateUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Create User</button>
-                </div>
+                </div>   */}
 
                 {/* CSV Upload */}
                 <div className="mt-4 p-3 bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg border-2 border-dashed border-emerald-200">
@@ -2792,11 +2792,27 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     onChange={handleDetailListFilterChange}
                     className={`flex-1 px-4 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
                   />
+                  
+                  <button
+        onClick={() => {
+        setCsvDownloadUsers(filteredOverviewUsers.filter(u => u.role !== 'superadmin'));
+          setCsvDownloadRole("search_results");
+          setIsCsvModalOpen(true);
+        }}
+        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium shadow flex items-center gap-2 text-sm transition"
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+        Export
+      </button>
                 </div>
                 <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   Showing {paginatedData.length} of {filteredDetailData.length} entries | Page {detailListPage} of {totalPages}
                 </p>
               </div>
+
+
+             
+                
 
               <div className="space-y-3">
                 {paginatedData.map((item) => {

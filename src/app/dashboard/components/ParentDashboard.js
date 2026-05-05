@@ -308,12 +308,12 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
           </div>
         </div>
 
-        {/* Logout Button */}
+        {/* Logout Button 
         <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
             Logout
           </button>
-        </div>
+        </div>  */}
       </aside>
 
       {/* MAIN CONTENT */}

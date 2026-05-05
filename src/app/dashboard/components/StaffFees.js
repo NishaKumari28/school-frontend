@@ -111,6 +111,107 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
   };
 
   const computeTotal = () => FEE_FIELDS.reduce((sum, f) => sum + (parseFloat(struct[f.key])||0), 0);
+  const formatCurrency = (value) => `Rs. ${(Number(value) || 0).toLocaleString()}`;
+
+  const buildInvoiceHtml = (invoice) => {
+    const lineItems = FEE_FIELDS
+      .filter((field) => Number(invoice[field.key]) > 0)
+      .map((field) => `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">${field.label}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:#0f172a;">${formatCurrency(invoice[field.key])}</td>
+        </tr>
+      `)
+      .join('');
+
+    const balance = Math.max(0, (Number(invoice.totalFee) || 0) - (Number(invoice.paidAmount) || 0));
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <title>${invoice.invoiceNo}</title>
+          <style>
+            body { font-family: Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 32px; }
+            .sheet { max-width: 760px; margin: 0 auto; background: #ffffff; border-radius: 24px; padding: 32px; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08); }
+            .muted { color: #64748b; }
+            .row { display: flex; justify-content: space-between; gap: 16px; }
+            .pill { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+            .summary { margin-top: 24px; padding: 20px; border-radius: 18px; background: #f8fafc; }
+            .summary .row { margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">
+            <div class="row" style="align-items:flex-start;">
+              <div>
+                <h1 style="margin:0 0 8px;font-size:28px;">Fee Invoice</h1>
+                <div class="muted" style="font-weight:700;">${invoice.invoiceNo}</div>
+              </div>
+              <span class="pill">${invoice.status}</span>
+            </div>
+
+            <div style="margin-top:24px;">
+              <div class="row">
+                <div>
+                  <div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;">Student</div>
+                  <div style="font-size:20px;font-weight:800;margin-top:6px;">${invoice.studentName || '-'}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;">Due Date</div>
+                  <div style="font-size:18px;font-weight:800;margin-top:6px;">${invoice.dueDate || '-'}</div>
+                </div>
+              </div>
+              <div class="row" style="margin-top:16px;">
+                <div>
+                  <div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;">Class</div>
+                  <div style="font-weight:700;margin-top:6px;">${invoice.className || '-'} ${invoice.section || ''}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;">Plan</div>
+                  <div style="font-weight:700;margin-top:6px;">${String(invoice.paymentPlan || 'one_time').replace('_', ' ')}</div>
+                </div>
+              </div>
+            </div>
+
+            <table>
+              <tbody>
+                ${lineItems}
+              </tbody>
+            </table>
+
+            ${invoice.fineReason ? `<div style="margin-top:16px;color:#b45309;font-weight:700;">Fine Reason: ${invoice.fineReason}</div>` : ''}
+
+            <div class="summary">
+              <div class="row"><span style="font-weight:700;">Total Fee</span><span style="font-weight:800;">${formatCurrency(invoice.totalFee)}</span></div>
+              <div class="row"><span style="font-weight:700;color:#059669;">Paid</span><span style="font-weight:800;color:#059669;">${formatCurrency(invoice.paidAmount)}</span></div>
+              <div class="row"><span style="font-weight:700;color:#dc2626;">Balance</span><span style="font-weight:800;color:#dc2626;">${formatCurrency(balance)}</span></div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  const handleDownloadInvoice = (invoice) => {
+    if (!invoice) return;
+
+    const html = buildInvoiceHtml(invoice);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    const safeStudentName = String(invoice.studentName || 'student').replace(/[^\w\s-]/g, '').trim().replace(/\s+/g, '-');
+
+    link.href = url;
+    link.download = `${invoice.invoiceNo || 'invoice'}-${safeStudentName || 'student'}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage('Invoice downloaded successfully!', 'success');
+  };
 
   const primary  = isDarkMode ? 'text-white'    : 'text-slate-900';
   const secondary= isDarkMode ? 'text-gray-400' : 'text-slate-600';
@@ -206,6 +307,18 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
                           {inv && (
                             <button onClick={()=>setPreviewInv(inv)} className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-black">View</button>
                           )}
+                          {inv && (
+                            <button
+                              onClick={() => handleDownloadInvoice(inv)}
+                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-all hover:bg-slate-200"
+                              title={`Download invoice for ${s.name}`}
+                              aria-label={`Download invoice for ${s.name}`}
+                            >
+                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                              </svg>
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -247,6 +360,16 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
                       <td className="p-4"><span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${sc}`}>{inv.status}</span></td>
                       <td className="p-4 flex gap-2">
                         <button onClick={()=>setPreviewInv(inv)} className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-black">View</button>
+                        <button
+                          onClick={() => handleDownloadInvoice(inv)}
+                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-all hover:bg-slate-200"
+                          title={`Download invoice for ${inv.studentName}`}
+                          aria-label={`Download invoice for ${inv.studentName}`}
+                        >
+                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
+                          </svg>
+                        </button>
                         {inv.status!=='paid' && (
                           <button onClick={()=>{setPayModal(inv);setPayAmount('');}} className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black">Pay</button>
                         )}
@@ -353,6 +476,7 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
 
             <div className="flex gap-3">
               <button onClick={()=>setPreviewInv(null)} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-700 font-black text-xs">Close</button>
+              <button onClick={()=>handleDownloadInvoice(previewInv)} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-black text-xs">Download</button>
               <button onClick={()=>window.print()} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black text-xs">🖨️ Print</button>
             </div>
           </div>

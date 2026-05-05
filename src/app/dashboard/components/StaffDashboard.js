@@ -1,28 +1,30 @@
 'use client';
 import { useMemo, useState, useEffect } from 'react';
-import DashboardCard from './DashboardCard';
-import { getFeeStructure, updateFeeStructure, sendNotification, getFeePayments, updateFeePaymentStatus, updateUserProfilePhoto, getNotifications } from '../../components/auth/authService';
+import { sendNotification, getFeePayments, updateUserProfilePhoto, getNotifications } from '../../components/auth/authService';
 
 import StaffTeacherAttendance from './StaffTeacherAttendance';
 import StaffHostel from './StaffHostel';
 import StaffLibrary from './StaffLibrary';
 import StaffTransport from './StaffTransport';
 import StaffFees from './StaffFees';
-import { initializeSampleData } from '../utils/staffDataUtils';
+import { initializeSampleData, hostelUtils, libraryUtils, transportUtils, teacherAttendanceUtils } from '../utils/staffDataUtils';
 
 export default function StaffDashboard({ user, allUsers, showMessage }) {
   const [activeTab, setActiveTab] = useState('overview');
-  const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isDarkMode, setIsDarkMode] = useState(() => {
+    if (typeof window === 'undefined') return false;
+    return localStorage.getItem('school_theme') === 'dark';
+  });
   const [profilePhoto, setProfilePhoto] = useState(user?.profilePhoto || '');
 
   useEffect(() => {
-    const savedTheme = localStorage.getItem('school_theme');
-    if (savedTheme === 'dark') {
-      setIsDarkMode(true);
+    if (isDarkMode) {
       document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
     }
     initializeSampleData();
-  }, []);
+  }, [isDarkMode]);
 
   const toggleTheme = () => {
     const newTheme = !isDarkMode;
@@ -73,6 +75,8 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   const [notificationAttachment, setNotificationAttachment] = useState(null);
   const [notificationRecordFilterDate, setNotificationRecordFilterDate] = useState('');
   const [notificationRefreshKey, setNotificationRefreshKey] = useState(0);
+  const [dashboardRefreshKey, setDashboardRefreshKey] = useState(0);
+  const [relativeTimeNow, setRelativeTimeNow] = useState(0);
   const [staffClassFilter, setStaffClassFilter] = useState('');
   const [staffSectionFilter, setStaffSectionFilter] = useState('');
 
@@ -95,20 +99,291 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
 
   const adminAssignedClasses = useMemo(() => parseMultiValueField(myAdmin?.className || myAdmin?.classes), [myAdmin]);
 
-  const getLocalData = (key) => {
-    if (typeof window === 'undefined') return [];
-    const stored = localStorage.getItem(key);
-    return stored ? JSON.parse(stored) : [];
-  };
-
   const [availableClasses, setAvailableClasses] = useState(['Nursery','LKG','UKG','1','2','3','4','5','6','7','8','9','10','11','12']);
   const staffClassOptions = adminAssignedClasses.length > 0 ? adminAssignedClasses : availableClasses;
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+
+    const refreshDashboardData = () => {
+      setDashboardRefreshKey((value) => value + 1);
+      setRelativeTimeNow(new Date().getTime());
+    };
+
+    refreshDashboardData();
+    const intervalId = window.setInterval(refreshDashboardData, 3000);
+    window.addEventListener('storage', refreshDashboardData);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('storage', refreshDashboardData);
+    };
+  }, []);
+
+  const teacherIdSet = useMemo(() => new Set(teachers.map((item) => String(item.id))), [teachers]);
+  const studentIdSet = useMemo(() => new Set(students.map((item) => String(item.id))), [students]);
+  const parentIdSet = useMemo(() => new Set(parents.map((item) => String(item.id))), [parents]);
+
   const schoolNotifications = useMemo(() => {
+    void dashboardRefreshKey;
+    void notificationRefreshKey;
     return getNotifications()
       .filter((item) => !item.schoolName || normalize(item.schoolName) === normalize(user.schoolName))
       .sort((a, b) => new Date(b.sentAt || b.notificationDate || 0) - new Date(a.sentAt || a.notificationDate || 0));
-  }, [notificationRefreshKey, user.schoolName]);
+  }, [dashboardRefreshKey, notificationRefreshKey, user.schoolName]);
+
+  const liveDashboardData = useMemo(() => {
+    void dashboardRefreshKey;
+    const isSameSchool = (record) => !record?.schoolName || normalize(record.schoolName) === normalize(user.schoolName);
+
+    const hostelRooms = hostelUtils.getRooms().filter(isSameSchool);
+    const hostelAllotments = hostelUtils.getAllotments().filter((item) => isSameSchool(item) && !item.leaveDate);
+    const hostelLogs = hostelUtils.getLogs().filter(isSameSchool);
+    const meetingVisitors = hostelUtils.getMeetingVisitors().filter(isSameSchool);
+    const generalVisitors = hostelUtils.getGeneralVisitors().filter(isSameSchool);
+
+    const libraryBooks = libraryUtils.getBooks().filter(isSameSchool);
+    const readingLogs = libraryUtils.getReadingLogs().filter(isSameSchool);
+    const studentLending = libraryUtils.getStudentLending().filter(isSameSchool);
+    const teacherLending = libraryUtils.getTeacherLending().filter(isSameSchool);
+
+    const transportPassengers = transportUtils.getPassengers().filter((item) => {
+      if (item?.schoolName && !isSameSchool(item)) return false;
+      const personId = item.studentId || item.teacherId || item.userId || item.id;
+      return studentIdSet.has(String(personId)) || teacherIdSet.has(String(personId)) || !personId;
+    });
+    const transportAttendance = transportUtils.getAttendance();
+
+    const teacherAttendance = teacherAttendanceUtils.getAttendance().filter((item) => {
+      if (!item) return false;
+      if (item.schoolName && !isSameSchool(item)) return false;
+      return teacherIdSet.has(String(item.teacherId));
+    });
+
+    const feePayments = getFeePayments().filter((item) => {
+      if (!item) return false;
+      if (item.schoolName && !isSameSchool(item)) return false;
+      return (
+        studentIdSet.has(String(item.studentId)) ||
+        parentIdSet.has(String(item.parentId)) ||
+        !item.studentId
+      );
+    });
+
+    return {
+      hostelRooms,
+      hostelAllotments,
+      hostelLogs,
+      meetingVisitors,
+      generalVisitors,
+      libraryBooks,
+      readingLogs,
+      studentLending,
+      teacherLending,
+      transportPassengers,
+      transportAttendance,
+      teacherAttendance,
+      feePayments
+    };
+  }, [dashboardRefreshKey, studentIdSet, teacherIdSet, user.schoolName, parentIdSet]);
+
+  const operationsSummary = useMemo(() => {
+    const totalBeds = liveDashboardData.hostelRooms.reduce((sum, room) => sum + (Number(room.beds) || 0), 0);
+    const occupiedBeds = liveDashboardData.hostelRooms.reduce((sum, room) => sum + (Number(room.occupied) || 0), 0);
+    const hostelPercent = totalBeds > 0 ? Math.round((occupiedBeds / totalBeds) * 100) : 0;
+
+    const totalBookUnits = liveDashboardData.libraryBooks.reduce((sum, book) => sum + Math.max(0, Number(book.stock) || 0), 0);
+    const issuedStudentBooks = liveDashboardData.studentLending.filter((item) => item.status === 'Issued').length;
+    const issuedTeacherBooks = liveDashboardData.teacherLending.filter((item) => item.status === 'Issued').length;
+    const activeIssuedBooks = issuedStudentBooks + issuedTeacherBooks;
+    const libraryBase = totalBookUnits + activeIssuedBooks;
+    const libraryPercent = libraryBase > 0 ? Math.round((activeIssuedBooks / libraryBase) * 100) : 0;
+
+    const today = new Date().toISOString().split('T')[0];
+    const todayTransportLogs = Object.entries(liveDashboardData.transportAttendance)
+      .filter(([key]) => key.startsWith(`${today}_`))
+      .map(([, value]) => value);
+    const completedTrips = todayTransportLogs.filter((item) => item.boarded && item.dropped).length;
+    const transportPercent = liveDashboardData.transportPassengers.length > 0
+      ? Math.round((completedTrips / liveDashboardData.transportPassengers.length) * 100)
+      : 0;
+
+    const totalRequestedFees = liveDashboardData.feePayments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const totalCollectedFees = liveDashboardData.feePayments
+      .filter((item) => item.status === 'paid')
+      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const feePercent = totalRequestedFees > 0 ? Math.round((totalCollectedFees / totalRequestedFees) * 100) : 0;
+
+    return [
+      {
+        label: 'Hostel Occupancy',
+        val: `${hostelPercent}%`,
+        color: 'bg-blue-500',
+        detail: `${occupiedBeds}/${totalBeds || 0} beds occupied`
+      },
+      {
+        label: 'Library Utilization',
+        val: `${libraryPercent}%`,
+        color: 'bg-purple-500',
+        detail: `${activeIssuedBooks} books currently issued`
+      },
+      {
+        label: 'Transport Efficiency',
+        val: `${transportPercent}%`,
+        color: 'bg-orange-500',
+        detail: `${completedTrips}/${liveDashboardData.transportPassengers.length || 0} trips completed today`
+      },
+      {
+        label: 'Fee Collection',
+        val: `${feePercent}%`,
+        color: 'bg-emerald-500',
+        detail: `Rs. ${totalCollectedFees.toLocaleString()} of Rs. ${totalRequestedFees.toLocaleString()} collected`
+      }
+    ];
+  }, [liveDashboardData]);
+
+  const formatRelativeTime = (value) => {
+    if (!value) return 'Just now';
+    const parsed = new Date(value);
+    if (Number.isNaN(parsed.getTime())) return value;
+
+    const diffMs = (relativeTimeNow || parsed.getTime()) - parsed.getTime();
+    if (diffMs < 60 * 1000) return 'Just now';
+
+    const diffMinutes = Math.floor(diffMs / (60 * 1000));
+    if (diffMinutes < 60) return `${diffMinutes} min ago`;
+
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} hr ago`;
+
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays < 7) return `${diffDays} day ago`;
+
+    return parsed.toLocaleDateString();
+  };
+
+  const buildActivityTimestamp = (dateValue, timeValue) => {
+    if (!dateValue) return '';
+    if (!timeValue || timeValue === '-') return `${dateValue}T00:00:00`;
+
+    const parsed = new Date(`${dateValue} ${timeValue}`);
+    if (Number.isNaN(parsed.getTime())) return `${dateValue}T00:00:00`;
+
+    return parsed.toISOString();
+  };
+
+  const recentActivities = useMemo(() => {
+    const passengerById = new Map(
+      liveDashboardData.transportPassengers.map((item) => [String(item.id), item])
+    );
+
+    const feeActivities = liveDashboardData.feePayments.map((item) => ({
+      id: `fee-${item.id}`,
+      icon: '💰',
+      text: item.status === 'paid'
+        ? `Fee payment received: Rs. ${(Number(item.amount) || 0).toLocaleString()}`
+        : `Fee request raised: Rs. ${(Number(item.amount) || 0).toLocaleString()}`,
+      timestamp: item.paidAt || item.updatedAt || item.requestedAt
+    }));
+
+    const notificationActivities = schoolNotifications.map((item) => ({
+      id: `notification-${item.id}`,
+      icon: '🔔',
+      text: `Notification sent: ${item.title}`,
+      timestamp: item.sentAt || item.notificationDate
+    }));
+
+    const hostelActivities = [
+      ...liveDashboardData.hostelAllotments.map((item) => ({
+        id: `hostel-allotment-${item.id}`,
+        icon: '🏢',
+        text: `${item.studentName || 'Student'} allotted to room ${item.roomNumber || '-'}`,
+        timestamp: item.date || item.createdAt
+      })),
+      ...liveDashboardData.meetingVisitors.map((item) => ({
+        id: `hostel-meeting-${item.id}`,
+        icon: '🏢',
+        text: `Hostel visitor check-in: ${item.visitorName || item.name || 'Visitor'}`,
+        timestamp: item.createdAt
+      })),
+      ...liveDashboardData.generalVisitors.map((item) => ({
+        id: `hostel-general-${item.id}`,
+        icon: '🏢',
+        text: `General hostel visitor: ${item.visitorName || item.name || 'Visitor'}`,
+        timestamp: item.createdAt
+      })),
+      ...liveDashboardData.hostelLogs.map((item) => ({
+        id: `hostel-log-${item.id}`,
+        icon: '🏢',
+        text: `${item.studentName || 'Student'} hostel movement updated`,
+        timestamp: item.date
+      }))
+    ];
+
+    const libraryActivities = [
+      ...liveDashboardData.studentLending.map((item) => ({
+        id: `library-student-${item.id}`,
+        icon: '📚',
+        text: `${item.bookTitle || 'Book'} issued to ${item.studentName || 'student'}`,
+        timestamp: item.returnDate || item.issueDate
+      })),
+      ...liveDashboardData.teacherLending.map((item) => ({
+        id: `library-teacher-${item.id}`,
+        icon: '📚',
+        text: `${item.bookTitle || 'Book'} issued to ${item.teacherName || 'teacher'}`,
+        timestamp: item.returnDate || item.issueDate
+      })),
+      ...liveDashboardData.readingLogs.map((item) => ({
+        id: `library-reading-${item.id}`,
+        icon: '📚',
+        text: `${item.bookTitle || 'Book'} used in reading room`,
+        timestamp: item.date
+      }))
+    ];
+
+    const transportActivities = Object.entries(liveDashboardData.transportAttendance).flatMap(([key, item]) => {
+      const [date, passengerId] = key.split('_');
+      const passenger = passengerById.get(String(passengerId));
+      const name = passenger?.name || passenger?.studentName || passenger?.teacherName || 'Passenger';
+
+      return [
+        item.boarded ? {
+          id: `transport-boarded-${key}`,
+          icon: '🚌',
+          text: `${name} boarded transport`,
+          timestamp: buildActivityTimestamp(date, item.boardingTime)
+        } : null,
+        item.dropped ? {
+          id: `transport-dropped-${key}`,
+          icon: '🚌',
+          text: `${name} dropped from transport`,
+          timestamp: buildActivityTimestamp(date, item.droppingTime)
+        } : null
+      ].filter(Boolean);
+    });
+
+    const teacherAttendanceActivities = liveDashboardData.teacherAttendance.map((item) => {
+      const teacher = teachers.find((record) => String(record.id) === String(item.teacherId));
+      return {
+        id: `teacher-attendance-${item.id}`,
+        icon: '👨‍🏫',
+        text: `${teacher?.name || 'Teacher'} marked ${item.status || 'attendance'}`,
+        timestamp: item.updatedAt || item.date
+      };
+    });
+
+    return [
+      ...feeActivities,
+      ...notificationActivities,
+      ...hostelActivities,
+      ...libraryActivities,
+      ...transportActivities,
+      ...teacherAttendanceActivities
+    ]
+      .filter((item) => item.timestamp)
+      .sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp))
+      .slice(0, 6);
+  }, [liveDashboardData, schoolNotifications, teachers]);
 
   const filteredNotificationRecords = useMemo(() => {
     if (!notificationRecordFilterDate) return schoolNotifications;
@@ -253,12 +528,12 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
           </div>
         </div>
 
-        {/* Logout Button */}
+        {/* Logout Button
         <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
           <button className={`w-full py-2.5 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
             Logout
           </button>
-        </div>
+        </div>   */}
       </aside>
 
       <main className="flex-1 min-w-0 p-8 relative overflow-x-hidden">
@@ -292,30 +567,90 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
         <div className="space-y-8">
           {activeTab === 'overview' && (
             <div className="space-y-8 animate-in fade-in duration-500">
-               <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
-                <DashboardCard 
-                  title="Active Teachers" 
-                  icon="🧑‍🏫" 
-                  value={teachers.length} 
-                  color="green" 
-                  onClick={() => setActiveTab('teacher_attendance')}
-                />
-                <DashboardCard 
-                  title="Library Books" 
-                  icon="📖" 
-                  value="1,240" 
-                  color="purple" 
-                  onClick={() => setActiveTab('library')}
-                />
-                <DashboardCard 
-                  title="Active Routes" 
-                  icon="🚌" 
-                  value="8" 
-                  color="orange" 
-                  onClick={() => setActiveTab('transport')}
-                />
+
+              {/* Staff Tools Guide (Overview tab only) */}
+              <div className={`p-6 rounded-3xl border shadow-xl ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+                <h3 className="text-lg font-black mb-4 flex items-center gap-2">
+                  <span className="w-8 h-8 rounded-lg bg-blue-100 flex items-center justify-center text-sm">🧭</span>
+                  Staff Tools Guide
+                </h3>
+                <p className={`text-sm mb-6 ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
+                  Manage your staff sections using the tabs below. Press Open to view and edit details within a category.
+                </p>
+
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {[
+                    {
+                      tab: 'teacher_attendance',
+                      icon: '👨‍🏫',
+                      title: 'Teacher Attendance',
+                      desc: 'Maintain daily attendance records and check staff status.'
+                    },
+                    {
+                      tab: 'hostel',
+                      icon: '🏢',
+                      title: 'Hostel',
+                      desc: 'Manage hostel occupancy and student check-in/check-out operations.'
+                    },
+                    {
+                      tab: 'library',
+                      icon: '📚',
+                      title: 'Library',
+                      desc: 'Manage books and issued items while tracking availability.'
+                    },
+                    {
+                      tab: 'transport',
+                      icon: '🚌',
+                      title: 'Transport',
+                      desc: 'Review routes and monitor transport status.'
+                    },
+                    {
+                      tab: 'fees',
+                      icon: '💰',
+                      title: 'Fees Control',
+                      desc: 'Manage fee structure, payments, and due tracking.'
+                    },
+                    {
+                      tab: 'notifications',
+                      icon: '🔔',
+                      title: 'Notifications',
+                      desc: 'Send broadcast notifications and review saved records.'
+                    }
+                  ].map((item) => (
+                    <div
+                      key={item.tab}
+                      className={`rounded-2xl border p-5 ${isDarkMode ? 'border-gray-700 bg-gray-900/40' : 'border-slate-100 bg-slate-50/70'}`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="w-9 h-9 rounded-xl bg-blue-100 flex items-center justify-center text-sm">
+                              {item.icon}
+                            </span>
+                            <h4 className="text-base font-black truncate">{item.title}</h4>
+                          </div>
+                          <p className={`mt-2 text-sm leading-relaxed ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
+                            {item.desc}
+                          </p>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setActiveTab(item.tab)}
+                          className={`shrink-0 px-3 py-2 rounded-xl text-xs font-bold transition-all hover:scale-[1.02] ${
+                            isDarkMode
+                              ? 'bg-blue-600 text-white hover:bg-blue-700'
+                              : 'bg-blue-500 text-white hover:bg-blue-600'
+                          }`}
+                        >
+                          Open
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-              
+
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                 <div className={`p-6 rounded-3xl border shadow-xl ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
                   <h3 className="text-lg font-black mb-6 flex items-center gap-2">
@@ -323,12 +658,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                     Operations Summary
                   </h3>
                   <div className="space-y-4">
-                    {[
-                      { label: 'Hostel Occupancy', val: '84%', color: 'bg-blue-500' },
-                      { label: 'Library Utilization', val: '62%', color: 'bg-purple-500' },
-                      { label: 'Transport Efficiency', val: '91%', color: 'bg-orange-500' },
-                      { label: 'Fee Collection', val: '78%', color: 'bg-emerald-500' },
-                    ].map((item, i) => (
+                    {operationsSummary.map((item, i) => (
                       <div key={i} className="space-y-1.5">
                         <div className="flex justify-between text-xs font-bold uppercase tracking-wider text-slate-500">
                           <span>{item.label}</span>
@@ -337,6 +667,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                         <div className="h-2 w-full bg-slate-100 dark:bg-gray-900 rounded-full overflow-hidden">
                           <div className={`h-full ${item.color} transition-all duration-1000`} style={{ width: item.val }} />
                         </div>
+                        <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>{item.detail}</p>
                       </div>
                     ))}
                   </div>
@@ -348,16 +679,16 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                     Recent Activity
                   </h3>
                   <div className="space-y-6">
-                    {[
-                      { icon: '💰', text: 'Parent of Arjun (Cl-5) paid Fee Rs. 15,000', time: '10 mins ago' },
-                      { icon: '📚', text: 'Modern Physics issued to Prof. Khanna', time: '45 mins ago' },
-                      { icon: '🏢', text: 'Visitor: Mr. Gupta (Parent) checked-in at Hostel', time: '2 hrs ago' },
-                    ].map((act, i) => (
-                      <div key={i} className="flex gap-4">
+                    {recentActivities.length === 0 ? (
+                      <div className={`rounded-2xl border p-4 text-sm ${isDarkMode ? 'border-gray-700 text-gray-300' : 'border-slate-200 text-slate-500'}`}>
+                        No real activity available yet. New hostel, library, transport, fee, attendance, or notification updates will appear here automatically.
+                      </div>
+                    ) : recentActivities.map((act) => (
+                      <div key={act.id} className="flex gap-4">
                         <div className="w-10 h-10 rounded-2xl bg-slate-50 dark:bg-gray-900 flex items-center justify-center text-lg">{act.icon}</div>
                         <div>
                           <p className="text-sm font-bold">{act.text}</p>
-                          <p className="text-xs text-slate-400">{act.time}</p>
+                          <p className="text-xs text-slate-400">{formatRelativeTime(act.timestamp)}</p>
                         </div>
                       </div>
                     ))}
@@ -411,23 +742,9 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                 Broadcast Notification
               </h2>
               <p className={`mb-6 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
-                Date, audience, attachment, aur message ke saath notification bhejiye.
+                Send a notification with date, audience, attachment, title, and message.
               </p>
               <div className='space-y-4'>
-                <input
-                  type='text'
-                  placeholder='Notification Title'
-                  value={notification.title}
-                  onChange={(e) => setNotification({...notification, title: e.target.value})}
-                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
-                />
-                <textarea
-                  placeholder='Notification Message'
-                  value={notification.message}
-                  onChange={(e) => setNotification({...notification, message: e.target.value})}
-                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
-                  rows={4}
-                />
                 <div className="grid gap-4 md:grid-cols-2">
                   <div>
                     <label className={`mb-2 block text-xs font-bold uppercase ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>Notice Date</label>
@@ -455,10 +772,26 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                 </div>
                 <div className={`rounded-2xl border border-dashed p-4 ${isDarkMode ? 'border-gray-600 bg-gray-700/40' : 'border-slate-300 bg-slate-50'}`}>
                   <label className={`mb-2 block text-xs font-bold uppercase ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>Attachment Upload</label>
+                  <div className="flex flex-wrap items-center gap-3">
+                    <label
+                      htmlFor="notification-attachment"
+                      className={`inline-flex cursor-pointer items-center rounded-xl px-4 py-2.5 text-sm font-bold transition-all ${
+                        isDarkMode
+                          ? 'bg-blue-600 text-white hover:bg-blue-700'
+                          : 'bg-blue-500 text-white hover:bg-blue-600'
+                      }`}
+                    >
+                      Choose File
+                    </label>
+                    <span className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
+                      {notificationAttachment ? notificationAttachment.name : 'No file chosen'}
+                    </span>
+                  </div>
                   <input
+                    id="notification-attachment"
                     type="file"
                     onChange={handleNotificationAttachmentChange}
-                    className={`w-full text-sm ${isDarkMode ? 'text-gray-200' : 'text-slate-700'}`}
+                    className="hidden"
                   />
                   {notificationAttachment && (
                     <div className={`mt-3 rounded-xl px-4 py-3 text-sm ${isDarkMode ? 'bg-gray-800 text-gray-200' : 'bg-white text-slate-700'}`}>
@@ -476,6 +809,20 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                     </div>
                   )}
                 </div>
+                <input
+                  type='text'
+                  placeholder='Notification Title'
+                  value={notification.title}
+                  onChange={(e) => setNotification({...notification, title: e.target.value})}
+                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                />
+                <textarea
+                  placeholder='Notification Message'
+                  value={notification.message}
+                  onChange={(e) => setNotification({...notification, message: e.target.value})}
+                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                  rows={4}
+                />
                 <button
                   onClick={handleSendNotification}
                   className="w-full bg-orange-600 text-white font-black py-4 rounded-2xl shadow-lg shadow-orange-500/30 hover:bg-orange-700 transition-all active:scale-[0.98]"
@@ -490,7 +837,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                   <div>
                     <h2 className="text-xl font-black">Notification Record Book</h2>
                     <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-600'}`}>
-                      Yahan sabhi notification details local record me store rahengi.
+                      All notification details will be stored here in the local record.
                     </p>
                   </div>
                   <div className="flex flex-col gap-2 md:items-end">
@@ -531,7 +878,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                 <div className="mt-6 space-y-4 max-h-[70vh] overflow-y-auto pr-1">
                   {filteredNotificationRecords.length === 0 ? (
                     <div className={`rounded-2xl border p-6 text-sm ${isDarkMode ? 'border-gray-700 text-gray-300' : 'border-slate-200 text-slate-500'}`}>
-                      Selected date ke liye koi notification record nahi mila.
+                      No notification record was found for the selected date.
                     </div>
                   ) : (
                     filteredNotificationRecords.map((item) => (
@@ -576,3 +923,4 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
     </div>
   );
 }
+
