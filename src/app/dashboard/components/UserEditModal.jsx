@@ -5,6 +5,7 @@ import { sanitizePhoneNumber, isValidPhoneNumber, getPhoneValidationMessage } fr
 export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMode = false, isDarkMode = false, availableSchools = [] }) {
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState('');
+  const [formErrors, setFormErrors] = useState({});
   const [schoolSearch, setSchoolSearch] = useState('');
   const [showSchoolDropdown, setShowSchoolDropdown] = useState(false);
   const dropdownRef = useRef(null);
@@ -77,14 +78,15 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [schoolSearch, availableSchools, formData.schoolName]);
-
   const handleChange = (field, value) => {
-    if (field === 'number') {
-      setFormData(prev => ({ ...prev, [field]: sanitizePhoneNumber(value) }));
-      if (error) setError('');
-      return;
-    }
     setFormData(prev => ({ ...prev, [field]: value }));
+    if (formErrors[field]) {
+      setFormErrors(prev => {
+        const newErrors = { ...prev };
+        delete newErrors[field];
+        return newErrors;
+      });
+    }
   };
 
   const handlePhotoChange = (e) => {
@@ -99,14 +101,68 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
     e.target.value = '';
   };
 
+  const cleanCSVString = (str) => {
+    if (!str) return '';
+    return [...new Set(str.split(',').map(s => s.trim()).filter(Boolean))].join(', ');
+  };
+
+  const hasDuplicates = (str) => {
+    if (!str) return false;
+    const parts = str.split(',').map(s => s.trim()).filter(Boolean);
+    return new Set(parts).size !== parts.length;
+  };
+
   const handleSubmit = (e) => {
-    e.preventDefault();
+    const errors = {};
+    if (!formData.name) errors.name = true;
+    if (!formData.number) errors.number = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      setError('Please fill all mandatory fields');
+      return;
+    }
+
     if (!isValidPhoneNumber(formData.number)) {
+      setFormErrors({ number: true });
       setError(getPhoneValidationMessage());
       return;
     }
+
+    // Check for duplicates in list fields
+    const fieldsToCheck = [
+      { name: 'board', label: 'Board', value: formData.board },
+      { name: 'className', label: 'Class', value: formData.className },
+      { name: 'section', label: 'Section', value: formData.section },
+      { name: 'academicYear', label: 'Academic Year', value: formData.academicYear },
+      { name: 'subject', label: 'Subject', value: formData.subject }
+    ];
+
+    for (const field of fieldsToCheck) {
+      if (hasDuplicates(field.value)) {
+        setFormErrors({ [field.name]: true });
+        setError(`Duplicate values found in ${field.label} field. Please remove repeats.`);
+        return;
+      }
+    }
+
+    setFormErrors({});
+
     setError('');
-    const payload = { ...user, ...formData };
+
+    // Clean up comma-separated fields (trims and formats)
+    const cleanedData = {
+      ...formData,
+      board: cleanCSVString(formData.board),
+      className: cleanCSVString(formData.className),
+      section: cleanCSVString(formData.section),
+      academicYear: cleanCSVString(formData.academicYear),
+      subject: cleanCSVString(formData.subject),
+      childClass: cleanCSVString(formData.childClass),
+      childSection: cleanCSVString(formData.childSection)
+    };
+
+    const payload = { ...user, ...cleanedData };
     if (!formData.password) delete payload.password;
     onSave(payload);
   };
@@ -152,7 +208,7 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
                 type="text"
                 value={formData.name}
                 onChange={(e) => handleChange('name', e.target.value)}
-                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`}
+                className={`w-full px-3 py-2 border rounded-md focus:ring-2 transition-all ${formErrors.name ? 'border-red-500 focus:ring-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`}
                 required
               />
             </div>
@@ -165,7 +221,7 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
                 onChange={(e) => handleChange('number', e.target.value)}
                 inputMode="numeric"
                 maxLength={10}
-                className={`w-full px-3 py-2 border rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`}
+                className={`w-full px-3 py-2 border rounded-md focus:ring-2 transition-all ${formErrors.number ? 'border-red-500 focus:ring-red-500' : 'focus:ring-blue-500 focus:border-blue-500'} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`}
                 required
               />
             </div>

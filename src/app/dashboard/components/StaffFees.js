@@ -1,5 +1,5 @@
 'use client';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { feeUtils } from '../utils/staffDataUtils';
 
 const FEE_FIELDS = [
@@ -41,24 +41,44 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
   const allPlans      = useMemo(() => feeUtils.getAllPlans(),      [refresh]);
   const allInvoices   = useMemo(() => feeUtils.getAllInvoices(),   [refresh]);
 
-  // Enrich students with fee info
+  // Auto-refresh when any external change (storage event) fires
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleStorage = () => reload();
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
+
+  // Enrich students with fee info + compute OVERALL status across ALL invoices
   const enriched = useMemo(() => {
     return students.map(s => {
-      const st  = allStructures.find(x => x.studentId === s.id);
-      const pl  = allPlans.find(x => x.studentId === s.id);
-      const invs = allInvoices.filter(x => x.studentId === s.id);
-      const latestInv = invs[invs.length - 1] || null;
-      return { ...s, feeStruct: st||null, plan: pl||null, latestInv, invoices: invs };
+      const st   = allStructures.find(x => x.studentId === s.id);
+      const pl   = allPlans.find(x => x.studentId === s.id);
+      const invs = allInvoices.filter(x => String(x.studentId) === String(s.id));
+      const latestInv = invs.length > 0 ? invs[invs.length - 1] : null;
+
+      // Aggregate across all invoices for this student
+      const totalInvoicedFee = invs.reduce((sum, i) => sum + (parseFloat(i.totalFee) || 0), 0);
+      const totalPaid        = invs.reduce((sum, i) => sum + (parseFloat(i.paidAmount) || 0), 0);
+
+      let overallStatus = 'no_invoice';
+      if (invs.length > 0) {
+        if (totalPaid <= 0)                           overallStatus = 'unpaid';
+        else if (totalPaid >= totalInvoicedFee)       overallStatus = 'paid';
+        else                                          overallStatus = 'partial';
+      }
+
+      return { ...s, feeStruct: st||null, plan: pl||null, latestInv, invoices: invs, overallStatus, totalPaid, totalInvoicedFee };
     });
   }, [students, allStructures, allPlans, allInvoices, refresh]);
 
   const filtered = useMemo(() => {
     return enriched.filter(s => {
       const nameMatch = s.name?.toLowerCase().includes(search.toLowerCase());
-      if (statusFilter === 'all') return nameMatch;
-      if (statusFilter === 'paid')    return nameMatch && s.latestInv?.status === 'paid';
-      if (statusFilter === 'partial') return nameMatch && s.latestInv?.status === 'partial';
-      if (statusFilter === 'unpaid')  return nameMatch && (!s.latestInv || s.latestInv.status === 'unpaid');
+      if (statusFilter === 'all')     return nameMatch;
+      if (statusFilter === 'paid')    return nameMatch && s.overallStatus === 'paid';
+      if (statusFilter === 'partial') return nameMatch && s.overallStatus === 'partial';
+      if (statusFilter === 'unpaid')  return nameMatch && (s.overallStatus === 'unpaid' || s.overallStatus === 'no_invoice') && s.feeStruct;
       if (statusFilter === 'setup')   return nameMatch && !s.feeStruct;
       return nameMatch;
     });
@@ -94,12 +114,47 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
   const handleGenerateInvoice = (student) => {
     const st = feeUtils.getStructure(student.id);
     const pl = feeUtils.getPlan(student.id);
-    if (!st) { showMessage('Set fee structure first','error'); return; }
-    const inv = feeUtils.generateInvoice(student.id, student.name, st, pl);
+    if (!st) { showMessage('Set fee structure first', 'error'); return; }
+
+    const existingInvs = feeUtils.getStudentInvoices(student.id);
+    const planType = pl?.planType || 'one_time';
+
+    // --- One-time: only 1 invoice ever ---
+    if (planType === 'one_time') {
+      if (existingInvs.length >= 1) {
+        showMessage('Invoice already generated for this student (One Time plan). View or pay the existing invoice.', 'error');
+        return;
+      }
+    }
+
+    // --- Installment: max N invoices (one per installment) ---
+    if (planType === 'installment') {
+      const maxInvoices = parseInt(pl?.installmentMonths) || 3;
+      if (existingInvs.length >= maxInvoices) {
+        showMessage(`All ${maxInvoices} installment invoice(s) already generated for this student.`, 'error');
+        return;
+      }
+    }
+
+    // --- Monthly: 1 invoice per calendar month ---
+    if (planType === 'monthly') {
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const alreadyThisMonth = existingInvs.some(
+        (inv) => inv.generatedAt && inv.generatedAt.startsWith(currentMonth)
+      );
+      if (alreadyThisMonth) {
+        showMessage('Invoice already generated for this month.', 'error');
+        return;
+      }
+    }
+
+    const installmentNumber = existingInvs.length + 1;
+    const inv = feeUtils.generateInvoice(student.id, student.name, st, pl, installmentNumber);
     reload();
-    showMessage('Invoice generated!','success');
+    showMessage('Invoice generated!', 'success');
     setPreviewInv(inv);
   };
+
 
   const handleMarkPaid = () => {
     if (!payAmount || isNaN(parseFloat(payAmount))) { showMessage('Enter valid amount','error'); return; }
@@ -273,7 +328,18 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
               <tbody className={`divide-y ${isDarkMode?'divide-gray-700/50':'divide-slate-50'}`}>
                 {filtered.map(s => {
                   const inv = s.latestInv;
-                  const statusColor = !inv?'bg-slate-100 text-slate-500':inv.status==='paid'?'bg-emerald-100 text-emerald-600':inv.status==='partial'?'bg-amber-100 text-amber-600':'bg-red-100 text-red-600';
+                  // Use aggregated overall status for the badge
+                  const os = s.overallStatus;
+                  const statusColor =
+                    os === 'paid'       ? 'bg-emerald-100 text-emerald-600' :
+                    os === 'partial'    ? 'bg-amber-100 text-amber-600' :
+                    os === 'unpaid'     ? 'bg-red-100 text-red-600' :
+                                         'bg-slate-100 text-slate-500';
+                  const statusLabel =
+                    os === 'paid'       ? 'Paid' :
+                    os === 'partial'    ? 'Partial' :
+                    os === 'unpaid'     ? 'Unpaid' :
+                                         'No Invoice';
                   const planLabel = s.plan?.planType==='one_time'?'One Time':s.plan?.planType==='monthly'?'Monthly':`Installment (${s.plan?.installmentMonths}m)`;
                   return (
                     <tr key={s.id} className={`transition-all ${isDarkMode?'hover:bg-gray-700/30':'hover:bg-slate-50'}`}>
@@ -286,11 +352,11 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
                         {s.plan ? <span className="px-2 py-1 bg-blue-100 text-blue-700 rounded text-[10px] font-black">{planLabel}</span>
                           : <span className="text-xs text-slate-400 font-bold">Not Set</span>}
                       </td>
-                      <td className={`p-4 font-black ${primary}`}>₹{(s.feeStruct?.totalFee||0).toLocaleString()}</td>
-                      <td className={`p-4 font-black text-emerald-600`}>₹{(inv?.paidAmount||0).toLocaleString()}</td>
+                      <td className={`p-4 font-black ${primary}`}>₹{(s.totalInvoicedFee||s.feeStruct?.totalFee||0).toLocaleString()}</td>
+                      <td className={`p-4 font-black text-emerald-600`}>₹{(s.totalPaid||0).toLocaleString()}</td>
                       <td className="p-4">
                         <span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${statusColor}`}>
-                          {inv?.status||'No Invoice'}
+                          {statusLabel}
                         </span>
                       </td>
                       <td className="p-4">
@@ -298,26 +364,8 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
                           <button onClick={()=>openSetup(s)} className="px-3 py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-black">
                             {s.feeStruct?'Edit Fee':'Set Fee'}
                           </button>
-                          {s.feeStruct && (
-                            <button onClick={()=>handleGenerateInvoice(s)} className="px-3 py-1.5 bg-emerald-600 text-white rounded-lg text-[10px] font-black">Invoice</button>
-                          )}
-                          {inv && inv.status!=='paid' && (
-                            <button onClick={()=>{setPayModal(inv);setPayAmount('');}} className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black">Mark Paid</button>
-                          )}
                           {inv && (
                             <button onClick={()=>setPreviewInv(inv)} className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-black">View</button>
-                          )}
-                          {inv && (
-                            <button
-                              onClick={() => handleDownloadInvoice(inv)}
-                              className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-all hover:bg-slate-200"
-                              title={`Download invoice for ${s.name}`}
-                              aria-label={`Download invoice for ${s.name}`}
-                            >
-                              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
-                              </svg>
-                            </button>
                           )}
                         </div>
                       </td>
@@ -353,7 +401,7 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
                     <tr key={inv.id} className={`transition-all ${isDarkMode?'hover:bg-gray-700/30':'hover:bg-slate-50'}`}>
                       <td className={`p-4 text-xs font-black text-blue-600`}>{inv.invoiceNo}</td>
                       <td className={`p-4 font-black text-sm ${primary}`}>{inv.studentName}</td>
-                      <td className={`p-4 text-xs font-bold ${secondary}`}>{inv.paymentPlan?.replace('_',' ')}</td>
+                      <td className={`p-4 text-xs font-bold ${secondary}`}>{inv.installmentLabel || inv.paymentPlan?.replace('_',' ')}</td>
                       <td className={`p-4 font-black ${primary}`}>₹{(inv.totalFee||0).toLocaleString()}</td>
                       <td className="p-4 font-black text-emerald-600">₹{(inv.paidAmount||0).toLocaleString()}</td>
                       <td className={`p-4 text-xs font-bold ${secondary}`}>{inv.dueDate}</td>

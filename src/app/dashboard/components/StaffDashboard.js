@@ -1,6 +1,7 @@
 'use client';
 import { useMemo, useState, useEffect } from 'react';
-import { sendNotification, getFeePayments, updateUserProfilePhoto, getNotifications } from '../../components/auth/authService';
+import { sendNotification, updateUserProfilePhoto, getNotifications } from '../../components/auth/authService';
+import { feeUtils } from '../utils/staffDataUtils';
 
 import StaffTeacherAttendance from './StaffTeacherAttendance';
 import StaffHostel from './StaffHostel';
@@ -79,6 +80,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   const [relativeTimeNow, setRelativeTimeNow] = useState(0);
   const [staffClassFilter, setStaffClassFilter] = useState('');
   const [staffSectionFilter, setStaffSectionFilter] = useState('');
+  const [formErrors, setFormErrors] = useState({});
 
   const normalize = (value) => String(value ?? '').trim().toLowerCase();
   
@@ -160,14 +162,9 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       return teacherIdSet.has(String(item.teacherId));
     });
 
-    const feePayments = getFeePayments().filter((item) => {
+    const feePayments = feeUtils.getAllInvoices().filter((item) => {
       if (!item) return false;
-      if (item.schoolName && !isSameSchool(item)) return false;
-      return (
-        studentIdSet.has(String(item.studentId)) ||
-        parentIdSet.has(String(item.parentId)) ||
-        !item.studentId
-      );
+      return studentIdSet.has(String(item.studentId)) || !item.studentId;
     });
 
     return {
@@ -185,7 +182,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       teacherAttendance,
       feePayments
     };
-  }, [dashboardRefreshKey, studentIdSet, teacherIdSet, user.schoolName, parentIdSet]);
+  }, [dashboardRefreshKey, studentIdSet, teacherIdSet, user.schoolName]);
 
   const operationsSummary = useMemo(() => {
     const totalBeds = liveDashboardData.hostelRooms.reduce((sum, room) => sum + (Number(room.beds) || 0), 0);
@@ -208,10 +205,8 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       ? Math.round((completedTrips / liveDashboardData.transportPassengers.length) * 100)
       : 0;
 
-    const totalRequestedFees = liveDashboardData.feePayments.reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
-    const totalCollectedFees = liveDashboardData.feePayments
-      .filter((item) => item.status === 'paid')
-      .reduce((sum, item) => sum + (Number(item.amount) || 0), 0);
+    const totalRequestedFees = liveDashboardData.feePayments.reduce((sum, item) => sum + (Number(item.totalFee) || 0), 0);
+    const totalCollectedFees = liveDashboardData.feePayments.reduce((sum, item) => sum + (Number(item.paidAmount) || 0), 0);
     const feePercent = totalRequestedFees > 0 ? Math.round((totalCollectedFees / totalRequestedFees) * 100) : 0;
 
     return [
@@ -277,14 +272,26 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       liveDashboardData.transportPassengers.map((item) => [String(item.id), item])
     );
 
-    const feeActivities = liveDashboardData.feePayments.map((item) => ({
-      id: `fee-${item.id}`,
-      icon: '💰',
-      text: item.status === 'paid'
-        ? `Fee payment received: Rs. ${(Number(item.amount) || 0).toLocaleString()}`
-        : `Fee request raised: Rs. ${(Number(item.amount) || 0).toLocaleString()}`,
-      timestamp: item.paidAt || item.updatedAt || item.requestedAt
-    }));
+    const feeActivities = liveDashboardData.feePayments.flatMap((item) => {
+      const acts = [];
+      if (item.lastPaidAt) {
+        acts.push({
+          id: `fee-paid-${item.id}`,
+          icon: '💰',
+          text: `Fee payment received: Rs. ${(Number(item.paidAmount) || 0).toLocaleString()} for ${item.studentName || 'Student'}`,
+          timestamp: item.lastPaidAt
+        });
+      }
+      if (item.generatedAt) {
+        acts.push({
+          id: `fee-inv-${item.id}`,
+          icon: '🧾',
+          text: `Invoice ${item.invoiceNo || ''} generated for ${item.studentName || 'Student'}: Rs. ${(Number(item.totalFee) || 0).toLocaleString()}`,
+          timestamp: item.generatedAt
+        });
+      }
+      return acts;
+    });
 
     const notificationActivities = schoolNotifications.map((item) => ({
       id: `notification-${item.id}`,
@@ -413,8 +420,14 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   };
 
   const handleSendNotification = () => {
-    if (!notification.title || !notification.message || !notification.notificationDate) {
-      showMessage('Please fill notification fields', 'error');
+    const errors = {};
+    if (!notification.title) errors.title = true;
+    if (!notification.message) errors.message = true;
+    if (!notification.notificationDate) errors.date = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showMessage('Please fill mandatory notification fields', 'error');
       return;
     }
     const result = sendNotification({
@@ -429,6 +442,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
       showMessage('Notification sent successfully!');
       setNotification({ title: '', message: '', targetRole: 'all', notificationDate: new Date().toISOString().split('T')[0] });
       setNotificationAttachment(null);
+      setFormErrors({});
       setNotificationRefreshKey((value) => value + 1);
     } else {
       showMessage(result.message, 'error');
@@ -751,8 +765,8 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                     <input
                       type='date'
                       value={notification.notificationDate}
-                      onChange={(e) => setNotification({ ...notification, notificationDate: e.target.value })}
-                      className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                      onChange={(e) => { setNotification({ ...notification, notificationDate: e.target.value }); if(formErrors.date) setFormErrors(prev => ({...prev, date: false})); }}
+                      className={`w-full px-4 py-3 rounded-xl border transition-all ${formErrors.date ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                     />
                   </div>
                   <div>
@@ -811,16 +825,16 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                 </div>
                 <input
                   type='text'
-                  placeholder='Notification Title'
+                  placeholder='Notification Title *'
                   value={notification.title}
-                  onChange={(e) => setNotification({...notification, title: e.target.value})}
-                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                  onChange={(e) => { setNotification({...notification, title: e.target.value}); if(formErrors.title) setFormErrors(prev => ({...prev, title: false})); }}
+                  className={`w-full px-4 py-3 rounded-xl border transition-all ${formErrors.title ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                 />
                 <textarea
-                  placeholder='Notification Message'
+                  placeholder='Notification Message *'
                   value={notification.message}
-                  onChange={(e) => setNotification({...notification, message: e.target.value})}
-                  className={`w-full px-4 py-3 rounded-xl border border-slate-200 ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
+                  onChange={(e) => { setNotification({...notification, message: e.target.value}); if(formErrors.message) setFormErrors(prev => ({...prev, message: false})); }}
+                  className={`w-full px-4 py-3 rounded-xl border transition-all ${formErrors.message ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-200'} ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}
                   rows={4}
                 />
                 <button

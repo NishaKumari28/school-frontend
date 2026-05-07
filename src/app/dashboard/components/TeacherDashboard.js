@@ -134,6 +134,7 @@ export default function TeacherDashboard({ user, allUsers: propUsers, showMessag
   const [attendanceList, setAttendanceList] = useState([]);
   const [materialsList, setMaterialsList] = useState([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [formErrors, setFormErrors] = useState({});
 
   // Initialize data from localStorage
   useEffect(() => {
@@ -382,23 +383,23 @@ const students = allUsers.filter(u => u.role === 'student');
   };
 
   const handleAssignHomework = () => {
-    if (!homework.dueDate) {
-      showMessage('Please set a due date', 'error');
-      return;
-    }
-    if (!homework.className) {
-      showMessage('Please select a class', 'error');
-      return;
-    }
-    if (!homework.section) {
-      showMessage('Please select a section', 'error');
-      return;
-    }
+    const errors = {};
+    if (!homework.dueDate) errors.dueDate = true;
+    if (!homework.className) errors.className = true;
+    if (!homework.section) errors.section = true;
     
     const hasFile = Boolean(homework.attachmentUrl);
     const hasText = Boolean((homework.title || '').trim() || (homework.description || '').trim());
+    
     if (!hasText && !hasFile) {
-      showMessage('Please enter title/description or upload a homework file', 'error');
+      errors.title = true;
+      errors.description = true;
+      errors.file = true;
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showMessage('Please fill all mandatory fields', 'error');
       return;
     }
     
@@ -431,11 +432,17 @@ const students = allUsers.filter(u => u.role === 'student');
       attachmentUrl: '', attachmentName: '', attachmentType: '',
       className: '', section: '' 
     });
+    setFormErrors({});
     refreshData();
   };
 
   const handleUploadMaterial = () => {
-    if (!material.title || !material.url) {
+    const errors = {};
+    if (!material.title) errors.materialTitle = true;
+    if (!material.url) errors.materialFile = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
       showMessage('Please fill title and upload file', 'error');
       return;
     }
@@ -461,6 +468,7 @@ const students = allUsers.filter(u => u.role === 'student');
     
     showMessage('Learning material uploaded successfully!');
     setMaterial({ title: '', type: 'document', url: '', description: '', file: null });
+    setFormErrors({});
     refreshData();
   };
 
@@ -1070,8 +1078,8 @@ const students = allUsers.filter(u => u.role === 'student');
                   <div className='grid gap-3 md:grid-cols-2'>
                     <select 
                       value={homework.className} 
-                      onChange={(e) => setHomework({...homework, className: e.target.value})}
-                      className='px-3 py-2 border border-slate-300 rounded-md'
+                      onChange={(e) => { setHomework({...homework, className: e.target.value}); if(formErrors.className) setFormErrors(prev => ({...prev, className: false})); }}
+                      className={`px-3 py-2 border rounded-md transition-all ${formErrors.className ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`}
                       required
                     >
                       <option value=''>Select Class *</option>
@@ -1079,8 +1087,8 @@ const students = allUsers.filter(u => u.role === 'student');
                     </select>
                     <select 
                       value={homework.section} 
-                      onChange={(e) => setHomework({...homework, section: e.target.value})}
-                      className='px-3 py-2 border border-slate-300 rounded-md'
+                      onChange={(e) => { setHomework({...homework, section: e.target.value}); if(formErrors.section) setFormErrors(prev => ({...prev, section: false})); }}
+                      className={`px-3 py-2 border rounded-md transition-all ${formErrors.section ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`}
                       required
                     >
                       <option value=''>Select Section *</option>
@@ -1090,19 +1098,31 @@ const students = allUsers.filter(u => u.role === 'student');
                   
                   <input 
                     type='text' 
-                    placeholder='Homework Title (optional if you upload a file)' 
+                    placeholder='Homework Title * (optional if file uploaded)' 
                     value={homework.title} 
-                    onChange={(e) => setHomework({...homework, title: e.target.value})} 
-                    className='w-full px-3 py-2 border border-slate-300 rounded-md' 
+                    onChange={(e) => { setHomework({...homework, title: e.target.value}); if(formErrors.title) setFormErrors(prev => ({...prev, title: false})); }} 
+                    className={`w-full px-3 py-2 border rounded-md transition-all ${formErrors.title ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`} 
                   />
                   
                   <textarea 
-                    placeholder='Homework Description (optional if you upload a file)' 
+                    placeholder='Homework Description * (optional if file uploaded)' 
                     value={homework.description} 
-                    onChange={(e) => setHomework({...homework, description: e.target.value})} 
-                    className='w-full px-3 py-2 border border-slate-300 rounded-md' 
+                    onChange={(e) => { setHomework({...homework, description: e.target.value}); if(formErrors.description) setFormErrors(prev => ({...prev, description: false})); }} 
+                    className={`w-full px-3 py-2 border rounded-md transition-all ${formErrors.description ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`} 
                     rows={3} 
                   />
+                  
+                  <div className='grid gap-3 md:grid-cols-2'>
+                    <div className='space-y-1'>
+                      <label className='text-xs font-semibold text-slate-600'>Due Date *</label>
+                      <input 
+                        type='date' 
+                        value={homework.dueDate} 
+                        onChange={(e) => { setHomework({...homework, dueDate: e.target.value}); if(formErrors.dueDate) setFormErrors(prev => ({...prev, dueDate: false})); }} 
+                        className={`w-full px-3 py-2 border rounded-md transition-all ${formErrors.dueDate ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`} 
+                      />
+                    </div>
+                  </div>
                   
                   <div className='rounded-lg border border-dashed border-blue-300 bg-blue-50/40 p-4'>
                     <p className='text-sm font-medium text-blue-900 mb-2'>Upload homework file (PDF, Word, images, videos — max 10MB)</p>
@@ -1438,7 +1458,7 @@ const students = allUsers.filter(u => u.role === 'student');
               <div className={`bg-white ${isDarkMode ? 'dark:bg-gray-800 border-gray-700 text-white' : ''} p-6 rounded-lg border border-slate-200`}>
                 <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'} mb-4`}>Upload Learning Material</h2>
                 <div className='space-y-4'>
-                  <input type='text' placeholder='Material Title' value={material.title} onChange={(e) => setMaterial({...material, title: e.target.value})} className='w-full px-3 py-2 border border-slate-300 rounded-md' />
+                  <input type='text' placeholder='Material Title *' value={material.title} onChange={(e) => { setMaterial({...material, title: e.target.value}); if(formErrors.materialTitle) setFormErrors(prev => ({...prev, materialTitle: false})); }} className={`w-full px-3 py-2 border rounded-md transition-all ${formErrors.materialTitle ? 'border-red-500 ring-1 ring-red-500' : 'border-slate-300'}`} />
                   <select value={material.type} onChange={(e) => setMaterial({...material, type: e.target.value})} className='w-full px-3 py-2 border border-slate-300 rounded-md'>
                     <option value='document'>Document</option>
                     <option value='video'>Video</option>
@@ -1446,12 +1466,12 @@ const students = allUsers.filter(u => u.role === 'student');
                     <option value='photo'>Photo</option>
                   </select>
                   
-                  <div className='rounded-lg border border-dashed border-purple-300 bg-purple-50/40 p-4'>
-                    <p className='text-sm font-medium text-purple-900 mb-2'>Upload file (PDF, Word, images, videos — max 10MB)</p>
+                  <div className={`rounded-lg border-2 border-dashed p-4 transition-all ${formErrors.materialFile ? 'border-red-500 bg-red-50' : 'border-purple-300 bg-purple-50/40'}`}>
+                    <p className={`text-sm font-medium mb-2 ${formErrors.materialFile ? 'text-red-800' : 'text-purple-900'}`}>Upload file (PDF, Word, images, videos — max 10MB) *</p>
                     <div className='flex flex-wrap items-center gap-3'>
                       <label className='cursor-pointer rounded-md bg-purple-600 px-4 py-2 text-sm font-semibold text-white hover:bg-purple-700'>
                         Choose file
-                        <input type='file' className='hidden' accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.mp4,.mov,.webm' onChange={handleMaterialFileChange} />
+                        <input type='file' className='hidden' accept='.pdf,.doc,.docx,.png,.jpg,.jpeg,.webp,.mp4,.mov,.webm' onChange={(e) => { handleMaterialFileChange(e); if(formErrors.materialFile) setFormErrors(prev => ({...prev, materialFile: false})); }} />
                       </label>
                       {material.file ? (
                         <>

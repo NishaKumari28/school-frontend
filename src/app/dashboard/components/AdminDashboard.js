@@ -7,6 +7,7 @@ import UserEditModal from './UserEditModal';
 import DownloadCSVModal from './DownloadCSVModal';
 import PasswordResetModal from './PasswordResetModal';
 import MultiSelect from './MultiSelect';
+import Pagination from './Pagination';
 import { getUserList, setUserList, sanitizePhoneNumber, isValidPhoneNumber, getPhoneValidationMessage } from '../../components/auth/authService';
 
 /* ============================================================
@@ -122,8 +123,10 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
   const [attendancePeriod, setAttendancePeriod] = useState('day');
-  const [usersPerPage, setUsersPerPage] = useState(50);
+  const [usersPerPage, setUsersPerPage] = useState(20);
   const [currentPage, setCurrentPage] = useState(1);
+  const overviewListRef = useRef(null);
+  const userListRef = useRef(null);
   const [showFilters, setShowFilters] = useState(false);
   
   // Overview page filters
@@ -155,7 +158,36 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     address: '', academicYear: '2026-27', parentName: '',
     childName: '', childClass: '', childSection: '', relationWithChild: '',
     designation: '',
+    howManyKids: 1,
+    kids: [{ name: '', currentClass: '', admissionClass: '' }]
   });
+
+  const [registrationFlow, setRegistrationFlow] = useState({
+    active: false,
+    parentData: null,
+    kidsList: [],
+    currentKidIndex: 0
+  });
+
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showSidebarUserMenu, setShowSidebarUserMenu] = useState(false);
+  const userMenuRef = useRef(null);
+
+  const navButtons = [
+    { label: "Overview", tab: "overview", filter: "all" },
+    { 
+      label: "User Management", 
+      tab: "users", 
+      isDropdown: true,
+      options: [
+        { label: "Teacher", role: "teacher" },
+        { label: "Student", role: "student" },
+        { label: "Parent", role: "parents" },
+        { label: "Staff", role: "staff" }
+      ]
+    }
+  ];
+  const [formErrors, setFormErrors] = useState({});
   const [inlineLinkStudent, setInlineLinkStudent] = useState('');
   const [inlineLinkParent, setInlineLinkParent] = useState('');
   const [inlineLinkSearchTerm, setInlineLinkSearchTerm] = useState('');
@@ -520,12 +552,36 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
 
   /* ---------- User CRUD ---------- */
   const handleCreateUser = () => {
-    if (!newUser.name || !newUser.number || !newUser.role) {
+    const errors = {};
+    if (!newUser.name) errors.name = true;
+    if (!newUser.number) errors.number = true;
+    if (!newUser.role) errors.role = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
       return showMessage?.('Please fill name, number, role', 'error');
     }
     const normalizedNumber = sanitizePhoneNumber(newUser.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
+      setFormErrors({ number: true });
       return showMessage?.(getPhoneValidationMessage(), 'error');
+    }
+
+    const isDuplicate = localUsers.some(u => {
+      const isSameNumber = sanitizePhoneNumber(u.number) === normalizedNumber;
+      if (!isSameNumber) return false;
+      
+      // Allow sharing between Student/Parent or Student/Student (siblings)
+      if ((newUser.role === 'student' && (u.role === 'parents' || u.role === 'student')) || 
+          (newUser.role === 'parents' && u.role === 'student')) {
+        return false;
+      }
+      return true;
+    });
+
+    if (isDuplicate) {
+      setFormErrors({ number: true });
+      return showMessage?.("An account with this phone number already exists for a different role!", "error");
     }
     if (newUser.role === 'admin' || newUser.role === 'superadmin') {
       return showMessage?.('Admins cannot create Admin/SuperAdmin accounts', 'error');
@@ -539,12 +595,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     if (newUser.role === 'student' && newUser.academicYear && !scopedYearOptions.includes(newUser.academicYear)) {
       return showMessage?.('Only assigned academic years are allowed', 'error');
     }
-    if (newUser.role === 'parents') {
-      if (newUser.childClass && !scopedClassOptions.includes(newUser.childClass)) 
-        return showMessage?.('Only assigned classes are allowed', 'error');
-      if (newUser.childSection && !scopedSectionOptions.includes(newUser.childSection)) 
-        return showMessage?.('Only assigned sections are allowed', 'error');
-    }
+
     const u = { 
       id: generateId(), 
       schoolName: myScopeSchool || '', 
@@ -552,23 +603,101 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
       createdByAdminId: user?.id, 
       ...newUser 
     };
+
+    // Clean up unnecessary fields
+    delete u.kids;
+    delete u.howManyKids;
+    delete u.admissionClass;
+
     Object.keys(u).forEach(k => { 
       if (u[k] === '' || u[k] === undefined) delete u[k]; 
     });
     u.role = newUser.role; 
     u.name = newUser.name; 
     u.number = normalizedNumber; 
-    u.password = newUser.password && String(newUser.password).trim() !== '' ? newUser.password : `VSMS@${String(normalizedNumber).slice(-4)}`;
+    u.password = newUser.password && String(newUser.password).trim() !== '' 
+      ? newUser.password 
+      : (newUser.role === 'student' ? `STU@${String(normalizedNumber).slice(-4)}` : `VSMS@${String(normalizedNumber).slice(-4)}`);
 
     const updated = [u, ...localUsers];
     setLocalUsers(updated); 
     saveAllUsers(updated);
-    showMessage?.('User created successfully!', 'success');
-    setNewUser({ 
-      name:'', number:'', password:'', role:'', className:'', section:'', 
-      subject:'', qualification:'', address:'', academicYear:'2026-27', parentName:'', 
-      childName:'', childClass:'', childSection:'', relationWithChild:'', designation:'' 
-    });
+
+    // Flow Handling
+    if (newUser.role === 'parents' && newUser.kids && newUser.kids.length > 0) {
+      const parentData = { ...u };
+      const kidsList = newUser.kids.map(k => ({
+        name: k.name,
+        className: k.admissionClass,
+        address: newUser.address,
+        academicYear: newUser.academicYear,
+        parentName: newUser.name,
+        number: newUser.number // default to parent's
+      }));
+
+      setRegistrationFlow({
+        active: true,
+        parentData: parentData,
+        kidsList: kidsList,
+        currentKidIndex: 0
+      });
+
+      // Switch to first kid
+      const firstKid = kidsList[0];
+      setNewUser({
+        ...newUser,
+        role: 'student',
+        name: firstKid.name,
+        className: firstKid.className,
+        address: firstKid.address,
+        academicYear: firstKid.academicYear,
+        parentName: firstKid.parentName,
+        number: firstKid.number,
+        password: ''
+      });
+      showMessage?.('Parent created. Now registering first student...', 'success');
+    } else if (registrationFlow.active) {
+      const nextIndex = registrationFlow.currentKidIndex + 1;
+      if (nextIndex < registrationFlow.kidsList.length) {
+        setRegistrationFlow({ ...registrationFlow, currentKidIndex: nextIndex });
+        const nextKid = registrationFlow.kidsList[nextIndex];
+        setNewUser({
+          ...newUser,
+          role: 'student',
+          name: nextKid.name,
+          className: nextKid.className,
+          address: nextKid.address,
+          academicYear: nextKid.academicYear,
+          parentName: nextKid.parentName,
+          number: nextKid.number,
+          password: ''
+        });
+        showMessage?.(`Student created. Now registering kid ${nextIndex + 1}...`, 'success');
+      } else {
+        // All kids done
+        setRegistrationFlow({ active: false, parentData: null, kidsList: [], currentKidIndex: 0 });
+        setNewUser({ 
+          name:'', number:'', password:'', role:'', className:'', section:'', 
+          subject:'', qualification:'', address:'', academicYear:'2026-27', parentName:'', 
+          childName:'', childClass:'', childSection:'', relationWithChild:'', designation:'',
+          howManyKids: 1,
+          kids: [{ name: '', currentClass: '', admissionClass: '' }]
+        });
+        showMessage?.('All registrations complete!', 'success');
+      }
+    } else {
+      // Normal creation
+      showMessage?.('User created successfully!', 'success');
+      setNewUser({ 
+        name:'', number:'', password:'', role:'', className:'', section:'', 
+        subject:'', qualification:'', address:'', academicYear:'2026-27', parentName:'', 
+        childName:'', childClass:'', childSection:'', relationWithChild:'', designation:'',
+        howManyKids: 1,
+        kids: [{ name: '', currentClass: '', admissionClass: '' }]
+      });
+    }
+
+    setFormErrors({});
     refreshData();
   };
 
@@ -583,6 +712,8 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     }
     const normalizedNumber = sanitizePhoneNumber(updated.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
+      // Since this is in a modal, we might want to handle formErrors in the modal too
+      // But UserEditModal already handles its own fieldErrors now.
       return showMessage?.(getPhoneValidationMessage(), 'error');
     }
     const list = localUsers.map(u => u.id === updated.id ? { ...u, ...updated } : u);
@@ -616,7 +747,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
     if (originalUser && originalUser.number) {
       const numberStr = String(originalUser.number);
       const last4 = numberStr.slice(-4);
-      const newPassword = `VSMS@${last4}`;
+      const newPassword = originalUser.role === 'student' ? `STU@${last4}` : `VSMS@${last4}`;
       
       const updatedUsers = localUsers.map(u => 
         u.id === resetPasswordUser.id 
@@ -746,7 +877,7 @@ export default function AdminDashboard({ user, allUsers: propUsers, showMessage,
         id: generateId(), 
         name: r.name, 
         number: normalizedNumber, 
-        password: r.password && String(r.password).trim() !== '' ? r.password : `VSMS@${String(normalizedNumber).slice(-4)}`,
+        password: r.password && String(r.password).trim() !== '' ? r.password : (String(r.role).toLowerCase() === 'student' ? `STU@${String(normalizedNumber).slice(-4)}` : `VSMS@${String(normalizedNumber).slice(-4)}`),
         role: String(r.role).toLowerCase(), 
         schoolName: myScopeSchool || r.schoolName || '',
         className: classValue, 
@@ -954,27 +1085,49 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
           <div className="flex-1 overflow-y-auto p-4">
             <p className={`text-xs font-semibold uppercase tracking-wider mb-2 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
             <div className="space-y-1">
-              <button
-                onClick={() => { setActiveTab('overview'); setFilterRole('all'); }}
-                className={`w-full text-left px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === 'overview' ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
-              >
-                Overview
-              </button>
-              <button
-                onClick={() => { setActiveTab('users'); setFilterRole('all'); }}
-                className={`w-full text-left px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === 'users' ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
-              >
-                Create User
-              </button>
+              {navButtons.map((btn) => (
+                <div key={btn.label} className="relative">
+                  <button
+                    onClick={() => { 
+                      if (btn.isDropdown) {
+                        setShowSidebarUserMenu(!showSidebarUserMenu);
+                      } else {
+                        setActiveTab(btn.tab); 
+                        setFilterRole(btn.filter); 
+                        setShowSidebarUserMenu(false);
+                      }
+                    }}
+                    className={`w-full text-left px-3 py-2 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between ${ (activeTab === btn.tab || (btn.isDropdown && ['teacher', 'student', 'parents', 'staff'].includes(activeTab))) ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
+                  >
+                    {btn.label}
+                    {btn.isDropdown && (
+                      <svg className={`w-4 h-4 transition-transform ${showSidebarUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    )}
+                  </button>
+                  {btn.isDropdown && showSidebarUserMenu && (
+                    <div className={`mt-1 ml-4 space-y-1 border-l-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                      {btn.options.map((opt) => (
+                        <button
+                          key={opt.role}
+                          onClick={() => {
+                            setActiveTab(opt.role);
+                            setNewUser(prev => ({ ...prev, role: opt.role }));
+                            setListFilterRole(opt.role);
+                            setShowSidebarUserMenu(false);
+                          }}
+                          className={`w-full text-left px-3 py-2 rounded-lg text-xs transition-all ${activeTab === opt.role ? (isDarkMode ? 'text-blue-400 font-bold' : 'text-blue-600 font-bold') : (isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900')}`}
+                        >
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
-
-          {/* Logout Button 
-          <div className={`p-4 border-t ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <button className={`w-full py-2 rounded-lg text-sm font-semibold transition-all ${isDarkMode ? 'bg-red-600 text-white hover:bg-red-700' : 'bg-red-500 text-white hover:bg-red-600'}`}>
-              Logout
-            </button>
-          </div>  */}
         </aside>
 
         {/* MAIN CONTENT */}
@@ -982,7 +1135,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
           {/* Header */}
           <div className={`mb-4 pb-2 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
             <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {activeTab === 'overview' ? 'Dashboard Overview' : 'User Management'}
+              {activeTab === 'overview' ? 'Dashboard Overview' : (['teacher', 'student', 'parents', 'staff'].includes(activeTab) ? `${activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Management` : 'User Management')}
             </h2>
             <p className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-0.5`}>
               Welcome, {user?.name || 'Admin'} :: {user?.role || 'admin'}
@@ -991,18 +1144,51 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
 
           {/* Tab Navigation */}
           <div className={`flex flex-wrap gap-2 mb-4 pb-2 border-b ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
-            <button
-              onClick={() => { setActiveTab('overview'); setFilterRole('all'); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'overview' ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
-            >
-              Overview
-            </button>
-            <button
-              onClick={() => { setActiveTab('users'); setFilterRole('all'); }}
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all ${activeTab === 'users' ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
-            >
-              Create User
-            </button>
+            {navButtons.map((btn) => (
+              <div key={btn.label} className="relative" ref={btn.isDropdown ? userMenuRef : null}>
+                <button
+                  onClick={() => { 
+                    if (btn.isDropdown) {
+                      setShowUserMenu(!showUserMenu);
+                    } else {
+                      setActiveTab(btn.tab); 
+                      setFilterRole(btn.filter); 
+                      setShowUserMenu(false);
+                    }
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-all flex items-center gap-1 ${ (activeTab === btn.tab || (btn.isDropdown && ['teacher', 'student', 'parents', 'staff'].includes(activeTab))) ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
+                >
+                  {btn.label}
+                  {btn.isDropdown && (
+                    <svg className={`w-4 h-4 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </button>
+                {btn.isDropdown && showUserMenu && (
+                  <div className={`absolute left-0 top-full mt-2 w-56 rounded-xl shadow-2xl z-[999] border backdrop-blur-md ${isDarkMode ? 'bg-gray-800/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
+                    <div className="p-2 space-y-1">
+                      {btn.options.map((opt) => (
+                        <button
+                          key={opt.role}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab(opt.role);
+                            setNewUser(prev => ({ ...prev, role: opt.role }));
+                            setListFilterRole(opt.role);
+                            setShowUserMenu(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-all duration-200 flex items-center gap-3 ${activeTab === opt.role ? (isDarkMode ? 'bg-blue-600 text-white font-bold' : 'bg-blue-500 text-white font-bold') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700/50 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')}`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${activeTab === opt.role ? 'bg-white' : 'bg-blue-400'}`}></span>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
 
           {/* Content Area */}
@@ -1139,8 +1325,8 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                         Search Results ({overviewFilteredUsers.length} users found)
                       </h3>
                     </div>
-                    <div className="space-y-2">
-                      {overviewFilteredUsers.slice(0, 50).map((user) => (
+                    <div className="space-y-2" ref={overviewListRef}>
+                      {overviewFilteredUsers.slice(0, 20).map((user) => (
                         <div key={user.id} className={`flex justify-between items-center p-3 rounded-lg border ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                           <div className="flex items-center gap-3">
                             <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${isDarkMode ? 'bg-blue-900 text-white' : 'bg-blue-100 text-blue-700'}`}>
@@ -1165,9 +1351,9 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                           </div>
                         </div>
                       ))}
-                      {overviewFilteredUsers.length > 50 && (
+                      {overviewFilteredUsers.length > 20 && (
                         <p className={`text-center text-sm py-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-                          Showing top 50 results. Please refine your search.
+                          Showing top 20 results. Please refine your search.
                         </p>
                       )}
                       {overviewFilteredUsers.length === 0 && (
@@ -1209,7 +1395,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                 </div>
 
                 {/* Users List */}
-                <div className="space-y-2">
+                <div className="space-y-2" ref={overviewListRef}>
                   {overviewPaginatedUsers.map(u => (
                     <div key={u.id} className={`flex justify-between items-center p-3 border rounded hover:bg-slate-50 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : ''}`}>
                       <div>
@@ -1243,235 +1429,224 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                 </div>
 
                 {/* Pagination Controls */}
-                {overviewTotalPages > 1 && (
-                  <div className="flex justify-center gap-2 mt-4 pt-3 border-t">
-                    <button
-                      onClick={() => setOverviewPage(p => Math.max(1, p - 1))}
-                      disabled={overviewPage === 1}
-                      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-                    >
-                      Previous
-                    </button>
-                    <span className="px-3 py-1 text-sm text-gray-600">
-                      Page {overviewPage} of {overviewTotalPages}
-                    </span>
-                    <button
-                      onClick={() => setOverviewPage(p => Math.min(overviewTotalPages, p + 1))}
-                      disabled={overviewPage === overviewTotalPages}
-                      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-                    >
-                      Next
-                    </button>
-                  </div>
-                )}
+                <Pagination 
+                  currentPage={overviewPage} 
+                  totalPages={overviewTotalPages} 
+                  onPageChange={(p) => { setOverviewPage(p); overviewListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} 
+                  isDarkMode={isDarkMode} 
+                />
               </div>
             )}
 
-            {/* CREATE USER TAB */}
-            {activeTab === 'users' && (
+            {/* ROLE MANAGEMENT TABS */}
+            {['teacher', 'student', 'parents', 'staff'].includes(activeTab) && (
               <div className="space-y-5">
-                {/* Create User Form */}
                 <div className={`p-5 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                  <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Create New User Account</h2>
-                  {/* Step 1: Admin Assigned Rights Display */}
-                  <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50">
-                    <h3 className={`font-semibold mb-3 text-blue-800`}>Your Assigned Access Rights</h3>
-                    <div className="grid gap-4 md:grid-cols-4">
-                      {/* Academic Year */}
-                      <div>
-                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Academic Years</label>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {assignedYears.length > 0 ? assignedYears.map(year => (
-                            <span key={year} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{year}</span>
-                          )) : <span className="text-sm text-gray-500">All</span>}
-                        </div>
-                      </div>
-
-                      {/* Board */}
-                      <div>
-                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Boards</label>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {assignedBoards.length > 0 ? assignedBoards.map(board => (
-                            <span key={board} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{board}</span>
-                          )) : <span className="text-sm text-gray-500">All</span>}
-                        </div>
-                      </div>
-
-                      {/* Class */}
-                      <div>
-                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Classes</label>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {assignedClasses.length > 0 ? assignedClasses.map(cls => (
-                            <span key={cls} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{cls}</span>
-                          )) : <span className="text-sm text-gray-500">All</span>}
-                        </div>
-                      </div>
-
-                      {/* Section */}
-                      <div>
-                        <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Sections</label>
-                        <div className="mt-2 flex flex-wrap gap-1">
-                          {assignedSections.length > 0 ? assignedSections.map(sec => (
-                            <span key={sec} className={`text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700`}>{sec}</span>
-                          )) : <span className="text-sm text-gray-500">All</span>}
-                        </div>
+                  <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                    Create {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Account
+                  </h2>
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-4">
+                      <input placeholder="Full Name *" value={newUser.name} onChange={e => {setNewUser({...newUser, name: e.target.value}); if(formErrors.name) setFormErrors(prev => ({...prev, name: false})); }} className={`w-full px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.name ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
+                    </div>
+                    <div className="md:col-span-4">
+                      <input placeholder="Phone Number *" value={newUser.number} onChange={e => {setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)}); if(formErrors.number) setFormErrors(prev => ({...prev, number: false})); }} inputMode="numeric" maxLength={10} className={`w-full px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.number ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
+                    </div>
+                    <div className="md:col-span-4">
+                      <div className="relative">
+                        <input type={showPassword ? 'text' : 'password'} placeholder="Password (Optional)" value={newUser.password} onChange={e => setNewUser({...newUser, password: e.target.value})} className={`w-full px-3 py-2 pr-8 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                        <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-2">{showPassword ? '🙈' : '👁️'}</button>
                       </div>
                     </div>
-                  </div>
-
-                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    <input 
-                      placeholder="Full Name *" 
-                      value={newUser.name} 
-                      onChange={e => setNewUser({...newUser, name: e.target.value})} 
-                      className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                    />
-                    <input 
-                      placeholder="Phone Number *" 
-                      value={newUser.number} 
-                      onChange={e => setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)})} 
-                      inputMode="numeric" 
-                      maxLength={10} 
-                      className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                    />
-                    <div className="relative">
-                      <input 
-                        type={showPassword ? "text" : "password"} 
-                        placeholder="Password (leave blank for default)" 
-                        value={newUser.password} 
-                        onChange={e => setNewUser({...newUser, password: e.target.value})} 
-                        className={`px-3 py-2 pr-10 border rounded-lg w-full text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
-                      <button 
-                        type="button" 
-                        onClick={() => setShowPassword(!showPassword)} 
-                        className="absolute right-3 top-2.5"
-                      >
-                        {showPassword ? "🙈" : "👁️"}
-                      </button>
-                    </div>
-                    <select 
-                      value={newUser.role} 
-                      onChange={e => setNewUser({...newUser, role: e.target.value})} 
-                      className={`px-3 py-2 border rounded-lg col-span-full font-medium text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                    >
-                      <option value="">Select Role *</option>
-                      <option value="teacher">Teacher</option>
-                      <option value="student">Student</option>
-                      <option value="parents">Parent</option>
-                      <option value="staff">Non teaching Staff</option>
-                    </select>
                   </div>
 
                   {/* role-specific fields */}
                   {newUser.role === 'teacher' && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <input 
-                        placeholder="Subject" 
-                        value={newUser.subject} 
-                        onChange={e => setNewUser({...newUser, subject: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
-                      <input 
-                        placeholder="Qualification" 
-                        value={newUser.qualification} 
-                        onChange={e => setNewUser({...newUser, qualification: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-6">
+                        <input 
+                          placeholder="Subject" 
+                          value={newUser.subject} 
+                          onChange={e => setNewUser({...newUser, subject: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
+                      <div className="md:col-span-6">
+                        <input 
+                          placeholder="Qualification" 
+                          value={newUser.qualification} 
+                          onChange={e => setNewUser({...newUser, qualification: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
                     </div>
                   )}
                   {newUser.role === 'student' && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-5">
-                      <select 
-                        value={newUser.className} 
-                        onChange={e => setNewUser({...newUser, className: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                      >
-                        <option value="">Select Class</option>
-                        {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <select 
-                        value={newUser.section} 
-                        onChange={e => setNewUser({...newUser, section: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                      >
-                        <option value="">Select Section</option>
-                        {scopedSectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <select 
-                        value={newUser.academicYear} 
-                        onChange={e => setNewUser({...newUser, academicYear: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                      >
-                        <option value="">Academic Year</option>
-                        {scopedYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
-                      </select>
-                      <input 
-                        placeholder="Address" 
-                        value={newUser.address} 
-                        onChange={e => setNewUser({...newUser, address: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
-                      <input 
-                        placeholder="Parent Name" 
-                        value={newUser.parentName} 
-                        onChange={e => setNewUser({...newUser, parentName: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-3">
+                        <select 
+                          value={newUser.className} 
+                          onChange={e => setNewUser({...newUser, className: e.target.value})} 
+                          disabled={registrationFlow.active}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                        >
+                          <option value="">Select Class</option>
+                          {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                        </select>
+                      </div>
+                      <div className="md:col-span-3">
+                        <select 
+                          value={newUser.section} 
+                          onChange={e => setNewUser({...newUser, section: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                        >
+                          <option value="">Select Section</option>
+                          {scopedSectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                      </div>
+                      <div className="md:col-span-3">
+                        <select 
+                          value={newUser.academicYear} 
+                          onChange={e => setNewUser({...newUser, academicYear: e.target.value})} 
+                          disabled={registrationFlow.active}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                        >
+                          <option value="">Academic Year</option>
+                          {scopedYearOptions.map(y => <option key={y} value={y}>{y}</option>)}
+                        </select>
+                      </div>
+                      <div className="md:col-span-3">
+                        <input 
+                          placeholder="Parent Name" 
+                          value={newUser.parentName} 
+                          onChange={e => setNewUser({...newUser, parentName: e.target.value})} 
+                          disabled={registrationFlow.active}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
+                      <div className="md:col-span-12">
+                        <input 
+                          placeholder="Address" 
+                          value={newUser.address} 
+                          onChange={e => setNewUser({...newUser, address: e.target.value})} 
+                          disabled={registrationFlow.active}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
                     </div>
                   )}
                   {newUser.role === 'parents' && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-5">
-                      <input 
-                        placeholder="Address" 
-                        value={newUser.address} 
-                        onChange={e => setNewUser({...newUser, address: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
-                      <input 
-                        placeholder="Child Name" 
-                        value={newUser.childName} 
-                        onChange={e => setNewUser({...newUser, childName: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
-                      <select 
-                        value={newUser.childClass} 
-                        onChange={e => setNewUser({...newUser, childClass: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                      >
-                        <option value="">Child Class</option>
-                        {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
-                      </select>
-                      <select 
-                        value={newUser.childSection} 
-                        onChange={e => setNewUser({...newUser, childSection: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-                      >
-                        <option value="">Child Section</option>
-                        {scopedSectionOptions.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                      <input 
-                        placeholder="Relation" 
-                        value={newUser.relationWithChild} 
-                        onChange={e => setNewUser({...newUser, relationWithChild: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
+                    <div className="mt-4 space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                        <div className="md:col-span-6">
+                          <input 
+                            placeholder="Address" 
+                            value={newUser.address} 
+                            onChange={e => setNewUser({...newUser, address: e.target.value})} 
+                            className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                          />
+                        </div>
+                        <div className="md:col-span-3">
+                          <input 
+                            placeholder="Relation with Kid(s)" 
+                            value={newUser.relationWithChild} 
+                            onChange={e => setNewUser({...newUser, relationWithChild: e.target.value})} 
+                            className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                          />
+                        </div>
+                        <div className="md:col-span-3 flex flex-col gap-1">
+                          <label className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>How many kids do you have?</label>
+                          <select 
+                            value={newUser.howManyKids}
+                            onChange={e => {
+                              const count = parseInt(e.target.value);
+                              const newKids = [...newUser.kids];
+                              if (count > newKids.length) {
+                                for (let i = newKids.length; i < count; i++) {
+                                  newKids.push({ name: '', currentClass: '', admissionClass: '' });
+                                }
+                              } else {
+                                newKids.length = count;
+                              }
+                              setNewUser({...newUser, howManyKids: count, kids: newKids});
+                            }}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                          >
+                            {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="border rounded-lg p-4 space-y-4 bg-gray-50 dark:bg-gray-700/50">
+                        <h3 className={`text-sm font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-800'}`}>Kids Details</h3>
+                        {newUser.kids.map((kid, index) => (
+                          <div key={index} className="grid gap-3 md:grid-cols-3 items-end border-b pb-4 last:border-0 last:pb-0">
+                            <div>
+                              <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Kid {index + 1} Name</label>
+                              <input 
+                                placeholder="Name" 
+                                value={kid.name} 
+                                onChange={e => {
+                                  const newKids = [...newUser.kids];
+                                  newKids[index].name = e.target.value;
+                                  setNewUser({...newUser, kids: newKids});
+                                }} 
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`} 
+                              />
+                            </div>
+                            <div>
+                              <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Kid {index + 1} Current Class</label>
+                              <select 
+                                value={kid.currentClass} 
+                                onChange={e => {
+                                  const newKids = [...newUser.kids];
+                                  newKids[index].currentClass = e.target.value;
+                                  setNewUser({...newUser, kids: newKids});
+                                }} 
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                              >
+                                <option value="">Select Class</option>
+                                {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                            <div>
+                              <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Admission in Class</label>
+                              <select 
+                                value={kid.admissionClass} 
+                                onChange={e => {
+                                  const newKids = [...newUser.kids];
+                                  newKids[index].admissionClass = e.target.value;
+                                  setNewUser({...newUser, kids: newKids});
+                                }} 
+                                className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                              >
+                                <option value="">Select Class</option>
+                                {scopedClassOptions.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   )}
                   {newUser.role === 'staff' && (
-                    <div className="mt-4 grid gap-4 md:grid-cols-2">
-                      <input 
-                        placeholder="Qualification" 
-                        value={newUser.qualification} 
-                        onChange={e => setNewUser({...newUser, qualification: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
-                      <input 
-                        placeholder="Designation" 
-                        value={newUser.designation} 
-                        onChange={e => setNewUser({...newUser, designation: e.target.value})} 
-                        className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
-                      />
+                    <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-6">
+                        <input 
+                          placeholder="Qualification" 
+                          value={newUser.qualification} 
+                          onChange={e => setNewUser({...newUser, qualification: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
+                      <div className="md:col-span-6">
+                        <input 
+                          placeholder="Designation" 
+                          value={newUser.designation} 
+                          onChange={e => setNewUser({...newUser, designation: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
                     </div>
                   )}
 
@@ -1516,9 +1691,32 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                     </p>
                   </div>
 
-                  <div className="mt-4">
-                    <button onClick={handleCreateUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Create User</button>
-                  </div>   */}
+                  <div className="mt-4 flex gap-3 items-center">
+                    <button 
+                      onClick={handleCreateUser} 
+                      className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg transition-all active:scale-95"
+                    >
+                      {registrationFlow.active ? `Add Kid ${registrationFlow.currentKidIndex + 1} (${registrationFlow.kidsList[registrationFlow.currentKidIndex].name})` : "Create User Account"}
+                    </button>
+                    {registrationFlow.active && (
+                      <button 
+                        onClick={() => {
+                          setRegistrationFlow({ active: false, parentData: null, kidsList: [], currentKidIndex: 0 });
+                          setNewUser({ 
+                            name:'', number:'', password:'', role:'', className:'', section:'', 
+                            subject:'', qualification:'', address:'', academicYear:'2026-27', parentName:'', 
+                            childName:'', childClass:'', childSection:'', relationWithChild:'', designation:'',
+                            howManyKids: 1,
+                            kids: [{ name: '', currentClass: '', admissionClass: '' }]
+                          });
+                        }}
+                        className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50"
+                      >
+                        Cancel Flow
+                      </button>
+                    )}
+                  </div>
+
 
                   {/* CSV Upload */}
                   <div className="mt-4 p-3 bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg border-2 border-dashed border-emerald-200">
@@ -1570,7 +1768,9 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                 {/* Users List with Pagination */}
                 <div className={`p-5 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                   <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
-                    <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>All System Users</h2>
+                    <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                      All {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')}s
+                    </h2>
                     <div className="flex items-center gap-2">
                       <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                         Showing {paginatedUsers.length} of {filteredUsers.length} user(s)
@@ -1599,25 +1799,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                       onChange={e => setSearchTerm(e.target.value)} 
                       className={`w-full border rounded px-4 py-2 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : ''}`} 
                     />
-                    <select
-                      value={listFilterRole}
-                      onChange={e => {
-                        setListFilterRole(e.target.value);
-                        setSelectedSchoolFilter('');
-                        setSelectedBoardFilters([]);
-                        setSelectedAcademicYear('');
-                        setSelectedClassFilter('');
-                        setSelectedSectionFilter('');
-                        setSelectedSubjectFilters([]);
-                      }}
-                      className={`border rounded px-4 py-2 text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : ''}`}
-                    >
-                      <option value="all">All Roles</option>
-                      <option value="teacher">Teachers</option>
-                      <option value="student">Students</option>
-                      <option value="parents">Parents</option>
-                      <option value="staff">Non teaching Staff</option>
-                    </select>
+                    {/* Role selection hidden as it's tab-based */}
 
                     {listFilterRole !== "all" && listFilterRole !== "staff" && listFilterRole !== "parents" && (
                       <div className="z-10 relative">
@@ -1675,7 +1857,7 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                   </div>
 
                   {/* Users List */}
-                  <div className="space-y-2">
+                  <div className="space-y-2" ref={userListRef}>
                     {paginatedUsers.map(u => (
                       <div key={u.id} className={`flex justify-between items-center p-3 border rounded hover:bg-slate-50 ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : ''}`}>
                         <div>
@@ -1721,27 +1903,12 @@ Lisa Staff,9876543213,123456,staff,,,,,Graduate,,,,,Librarian`;
                   </div>
 
                   {/* Pagination Controls */}
-                  {totalPages > 1 && (
-                    <div className="flex justify-center gap-2 mt-4 pt-3 border-t">
-                      <button
-                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
-                        disabled={currentPage === 1}
-                        className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-                      >
-                        Previous
-                      </button>
-                      <span className="px-3 py-1 text-sm text-gray-600">
-                        Page {currentPage} of {totalPages}
-                      </span>
-                      <button
-                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
-                        disabled={currentPage === totalPages}
-                        className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-                      >
-                        Next
-                      </button>
-                    </div>
-                  )}
+                  <Pagination 
+                  currentPage={currentPage} 
+                  totalPages={totalPages} 
+                  onPageChange={(p) => { setCurrentPage(p); userListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} 
+                  isDarkMode={isDarkMode} 
+                />
                 </div>
               </div>
             )}

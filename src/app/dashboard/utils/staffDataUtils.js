@@ -436,23 +436,59 @@ export const feeUtils = {
   getStudentInvoices: (studentId) => {
     return feeUtils.getAllInvoices().filter(inv => inv.studentId === studentId);
   },
-  generateInvoice: (studentId, studentName, structure, plan) => {
+  generateInvoice: (studentId, studentName, structure, plan, installmentNumber = 1) => {
     const invoices = feeUtils.getAllInvoices();
+    const planType = plan?.planType || 'one_time';
+    const totalFee = (
+      (parseFloat(structure.tuitionFee) || 0) +
+      (parseFloat(structure.libraryFee) || 0) +
+      (parseFloat(structure.electricityBill) || 0) +
+      (parseFloat(structure.waterBill) || 0) +
+      (parseFloat(structure.dressFee) || 0) +
+      (parseFloat(structure.bookFee) || 0) +
+      (parseFloat(structure.transportFee) || 0) +
+      (parseFloat(structure.fine) || 0)
+    );
+
+    // Compute per-invoice fee based on plan
+    let invoiceFee = totalFee;
+    let installmentMonths = parseInt(plan?.installmentMonths) || 3;
+    if (planType === 'installment') {
+      invoiceFee = Math.ceil(totalFee / installmentMonths);
+    } else if (planType === 'monthly') {
+      invoiceFee = Math.ceil(totalFee / 12);
+    }
+
+    // Label: "Installment 2 of 3" for installment plans
+    let installmentLabel = '';
+    if (planType === 'installment') {
+      installmentLabel = `Installment ${installmentNumber} of ${installmentMonths}`;
+    } else if (planType === 'monthly') {
+      installmentLabel = `Month ${installmentNumber}`;
+    }
+
+    // Due date: 15 days for one_time, per installment month otherwise
+    const dueDays = planType === 'one_time' ? 15 : 30;
     const inv = {
       id: generateId(),
       invoiceNo: `INV-${Date.now()}`,
       studentId,
       studentName,
       generatedAt: new Date().toISOString(),
-      dueDate: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+      dueDate: new Date(Date.now() + dueDays * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
       status: 'unpaid',
       ...structure,
-      paymentPlan: plan?.planType || 'one_time',
-      installmentMonths: plan?.installmentMonths || 1,
+      totalFee: invoiceFee,
+      paymentPlan: planType,
+      installmentMonths: installmentMonths,
+      installmentNumber,
+      installmentLabel,
       paidAmount: 0,
     };
     invoices.push(inv);
     setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
+    // Notify other tabs/components
+    if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
     return inv;
   },
   markInvoicePaid: (invoiceId, amount) => {
@@ -463,6 +499,8 @@ export const feeUtils = {
       invoices[idx].status = invoices[idx].paidAmount >= invoices[idx].totalFee ? 'paid' : 'partial';
       invoices[idx].lastPaidAt = new Date().toISOString();
       setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
+      // Notify other tabs/components to re-render
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
     }
   },
   deleteInvoice: (invoiceId) => {

@@ -8,6 +8,7 @@ import { getUserList, setUserList, sanitizePhoneNumber, isValidPhoneNumber, getP
 import PasswordResetModal from "./PasswordResetModal";
 import DownloadCSVModal from "./DownloadCSVModal";
 import MultiSelect from "./MultiSelect";
+import Pagination from "./Pagination";
 
 // Local storage keys
 const STORAGE_KEYS = {
@@ -162,6 +163,9 @@ export default function SuperadminDashboard({ user: currentUser, allUsers: propU
   const [selectedAcademicYear, setSelectedAcademicYear] = useState("2026-27");
   const [selectedClassFilter, setSelectedClassFilter] = useState("");
   const [selectedSectionFilter, setSelectedSectionFilter] = useState("");
+   const [showUserMenu, setShowUserMenu] = useState(false);
+   const [showSidebarUserMenu, setShowSidebarUserMenu] = useState(false);
+   const userMenuRef = useRef(null);
   const [selectedSchoolFilter, setSelectedSchoolFilter] = useState("");
   const [selectedBoardFilter, setSelectedBoardFilter] = useState("");
   const [selectedSubjectFilter, setSelectedSubjectFilter] = useState("");
@@ -197,6 +201,7 @@ export default function SuperadminDashboard({ user: currentUser, allUsers: propU
   // Admin CSV Bulk Upload States
   const [adminCsvData, setAdminCsvData] = useState([]);
   const [adminCsvErrors, setAdminCsvErrors] = useState([]);
+  const [adminCsvFileName, setAdminCsvFileName] = useState("");
   const [isProcessingAdminCsv, setIsProcessingAdminCsv] = useState(false);
   const [showAdminCsvModal, setShowAdminCsvModal] = useState(false);
   
@@ -205,11 +210,12 @@ export default function SuperadminDashboard({ user: currentUser, allUsers: propU
   // Pagination states - YEH ADD KARO
 const [adminPage, setAdminPage] = useState(1);
 const [userPage, setUserPage] = useState(1);
-const ADMIN_PER_PAGE = 50;
-const USER_PER_PAGE = 50;
+const ADMIN_PER_PAGE = 20;
+const USER_PER_PAGE = 20;
   // CSV States
   const [csvData, setCsvData] = useState([]);
   const [csvErrors, setCsvErrors] = useState([]);
+  const [csvFileName, setCsvFileName] = useState("");
   const [isProcessingCsv, setIsProcessingCsv] = useState(false);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [editingUser, setEditingUser] = useState(null);
@@ -220,7 +226,15 @@ const USER_PER_PAGE = 50;
     subject: "", qualification: "",
     address: "", childName: "", childClass: "", childSection: "", relationWithChild: "",
     designation: "",
-    className: "", section: "", academicYear: "2026-27", parentName: ""
+    className: "", section: "", academicYear: "2026-27", parentName: "",
+    howManyKids: 1,
+    kids: [{ name: '', currentClass: '', admissionClass: '' }]
+  });
+  const [registrationFlow, setRegistrationFlow] = useState({
+    active: false,
+    parentData: null,
+    kidsList: [],
+    currentKidIndex: 0
   });
   
   const [editingAdminId, setEditingAdminId] = useState(null);
@@ -245,13 +259,17 @@ const [passwordResetUser, setPasswordResetUser] = useState(null);
   // School name dropdown state for user management
   const [schoolSearchQuery, setSchoolSearchQuery] = useState("");
   const [showSchoolDropdown, setShowSchoolDropdown] = useState(false);
+  const [formErrors, setFormErrors] = useState({});
   const schoolDropdownRef = useRef(null);
 
   // New state for the detail list page
   const [detailListRole, setDetailListRole] = useState(null);
   const [detailListFilter, setDetailListFilter] = useState("");
   const [detailListPage, setDetailListPage] = useState(1);
-  const ITEMS_PER_PAGE = 50;
+  const detailListRef = useRef(null);
+  const adminListRef = useRef(null);
+  const userListRef = useRef(null);
+const ITEMS_PER_PAGE = 20;
 
   // New state for admin creation wizard - added boards
   const [selectedAdminClasses, setSelectedAdminClasses] = useState([]);
@@ -267,6 +285,8 @@ const [passwordResetUser, setPasswordResetUser] = useState(null);
   const [tempSelectedYears, setTempSelectedYears] = useState([]);
   const [tempSelectedBoards, setTempSelectedBoards] = useState([]);
 
+
+  // Load theme preference and profile picture
   // Load theme preference and profile picture
   useEffect(() => {
     const savedTheme = localStorage.getItem(STORAGE_KEYS.THEME);
@@ -280,6 +300,19 @@ const [passwordResetUser, setPasswordResetUser] = useState(null);
     }
     initializeData();
     loadDynamicData();
+  }, []);
+
+  // Close user menu when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
   }, []);
 
   // Reset admin page when filters change
@@ -555,10 +588,22 @@ useEffect(() => {
     return list;
   }, [admins, adminSearchTerm, selectedAdminBoardFilter, selectedAdminFilter]);
 
+
+
   const navButtons = [
     { label: "Overview", tab: "overview", filter: "all" },
     { label: "Create Admin", tab: "admin-management", filter: "all" },
-    { label: "User Management", tab: "users", filter: "all" }
+    { 
+      label: "User Management", 
+      tab: "users", 
+      isDropdown: true,
+      options: [
+        { label: "Teacher", role: "teacher" },
+        { label: "Student", role: "student" },
+        { label: "Parent", role: "parents" },
+        { label: "Staff", role: "staff" }
+      ]
+    }
   ];
 
   // Reset form for new admin
@@ -639,20 +684,42 @@ useEffect(() => {
 
   // Admin Management Functions
   const handleCreateAdmin = () => {
-    if (!newUser.name || !newUser.number || !newUser.schoolName) {
-      showMessage("Please fill all fields", "error");
+    const errors = {};
+    if (!newUser.name) errors.name = true;
+    if (!newUser.number) errors.number = true;
+    if (!newUser.schoolName) errors.schoolName = true;
+    
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showMessage("Please fill all mandatory fields", "error");
       return;
     }
+
     const normalizedNumber = sanitizePhoneNumber(newUser.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
+      setFormErrors({ number: true });
       showMessage(getPhoneValidationMessage(), "error");
       return;
     }
-    
-    if (selectedAdminClasses.length === 0 || selectedAdminSections.length === 0 || selectedAdminAcademicYears.length === 0 || selectedAdminBoards.length === 0) {
-      showMessage("Please select at least one Class, Section, Academic Year, and Board for the admin", "error");
+
+    if (allUsers.some(u => sanitizePhoneNumber(u.number) === normalizedNumber)) {
+      setFormErrors({ number: true });
+      showMessage("An account with this phone number already exists!", "error");
       return;
     }
+    
+    const step1Errors = {};
+    if (selectedAdminClasses.length === 0) step1Errors.classes = true;
+    if (selectedAdminAcademicYears.length === 0) step1Errors.years = true;
+    if (selectedAdminBoards.length === 0) step1Errors.boards = true;
+
+    if (Object.keys(step1Errors).length > 0) {
+      setFormErrors(step1Errors);
+      showMessage("Please select at least one Class, Academic Year, and Board for the admin", "error");
+      return;
+    }
+
+    setFormErrors({});
     
     const newAdmin = {
       id: generateId(),
@@ -712,20 +779,35 @@ useEffect(() => {
       showMessage("No admin selected for update", "error");
       return;
     }
-    if (!newUser.name || !newUser.number || !newUser.schoolName) {
-      showMessage("Please fill all fields", "error");
+    const errors = {};
+    if (!newUser.name) errors.name = true;
+    if (!newUser.number) errors.number = true;
+    if (!newUser.schoolName) errors.schoolName = true;
+    
+    if (selectedAdminClasses.length === 0) errors.classes = true;
+    if (selectedAdminAcademicYears.length === 0) errors.years = true;
+    if (selectedAdminBoards.length === 0) errors.boards = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showMessage("Please fill all mandatory fields", "error");
       return;
     }
+
     const normalizedNumber = sanitizePhoneNumber(newUser.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
+      setFormErrors({ number: true });
       showMessage(getPhoneValidationMessage(), "error");
       return;
     }
-    
-    if (selectedAdminClasses.length === 0 || selectedAdminAcademicYears.length === 0 || selectedAdminBoards.length === 0) {
-      showMessage("Please select at least one Class, Academic Year, and Board for the admin", "error");
+
+    if (allUsers.some(u => u.id !== editingAdminId && sanitizePhoneNumber(u.number) === normalizedNumber)) {
+      setFormErrors({ number: true });
+      showMessage("Another account with this phone number already exists!", "error");
       return;
     }
+    
+    setFormErrors({});
     
     const updatedUsers = allUsers.map(u => 
       u.id === editingAdminId ? { 
@@ -757,6 +839,11 @@ const handleSaveAdminEdit = (updatedAdmin) => {
   const normalizedNumber = sanitizePhoneNumber(updatedAdmin.number);
   if (!isValidPhoneNumber(normalizedNumber)) {
     showMessage(getPhoneValidationMessage(), 'error');
+    return;
+  }
+
+  if (allUsers.some(u => u.id !== updatedAdmin.id && sanitizePhoneNumber(u.number) === normalizedNumber)) {
+    showMessage("Another account with this phone number already exists!", "error");
     return;
   }
   const updatedUsers = allUsers.map(u => 
@@ -795,7 +882,7 @@ const confirmPasswordReset = () => {
   
   if (originalUser) {
     const last4 = String(originalUser.number).slice(-4);
-    const newPassword = `VSMS@${last4}`;
+    const newPassword = originalUser.role === 'student' ? `STU@${last4}` : `VSMS@${last4}`;
     
     const updatedUsers = allUsers.map(u => 
       u.id === passwordResetUser.id 
@@ -817,69 +904,189 @@ const confirmPasswordReset = () => {
 
   // User Management Functions - with new users first
   const handleCreateUser = () => {
-    if (!newUser.name || !newUser.number || !newUser.role) {
-      showMessage("Please fill all fields", "error");
+    const errors = {};
+    if (!newUser.name) errors.name = true;
+    if (!newUser.number) errors.number = true;
+    if (!newUser.role) errors.role = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
+      showMessage("Please fill all mandatory fields", "error");
       return;
     }
+
     const normalizedNumber = sanitizePhoneNumber(newUser.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
+      setFormErrors({ number: true });
       showMessage(getPhoneValidationMessage(), "error");
       return;
     }
 
-    const resolvedSchoolName = newUser.schoolName || (selectedAdminFilter !== "all" ? selectedAdminFilter : "");
+    const isDuplicate = allUsers.some(u => {
+      const isSameNumber = sanitizePhoneNumber(u.number) === normalizedNumber;
+      if (!isSameNumber) return false;
+      
+      // Allow sharing between Student/Parent or Student/Student (siblings)
+      if ((newUser.role === 'student' && (u.role === 'parents' || u.role === 'student')) || 
+          (newUser.role === 'parents' && u.role === 'student')) {
+        return false;
+      }
+      return true;
+    });
+
+    if (isDuplicate) {
+      setFormErrors({ number: true });
+      showMessage("An account with this phone number already exists for a different role!", "error");
+      return;
+    }
+
+    setFormErrors({});
+
+    const resolvedSchoolName = newUser.schoolName || (selectedSchoolFilter !== "all" ? selectedSchoolFilter : "");
     const mappedAdmin = admins.find((admin) => admin.schoolName === resolvedSchoolName);
     
-    const userData = {
-      id: generateId(),
+    const u = { 
+      id: generateId(), 
       name: newUser.name,
       number: normalizedNumber,
-      password: newUser.password && String(newUser.password).trim() !== '' ? newUser.password : `VSMS@${String(normalizedNumber).slice(-4)}`,
+      password: newUser.password && String(newUser.password).trim() !== '' 
+        ? newUser.password 
+        : (newUser.role === 'student' ? `STU@${String(normalizedNumber).slice(-4)}` : `VSMS@${String(normalizedNumber).slice(-4)}`),
       role: newUser.role,
-      schoolName: resolvedSchoolName,
-      board: mappedAdmin?.board || "",
+      schoolName: resolvedSchoolName, 
+      board: mappedAdmin?.board || "", 
+      createdByAdminId: null
     };
-    
+
     if (newUser.role === "teacher") {
-      userData.subject = newUser.subject;
-      userData.qualification = newUser.qualification;
+      u.subject = newUser.subject;
+      u.qualification = newUser.qualification;
     } else if (newUser.role === "student") {
-      userData.className = newUser.className;
-      userData.section = newUser.section;
-      userData.academicYear = newUser.academicYear || selectedAcademicYear;
-      userData.address = newUser.address;
-      userData.parentName = newUser.parentName;
+      u.className = newUser.className;
+      u.section = newUser.section;
+      u.academicYear = newUser.academicYear || selectedAcademicYear;
+      u.address = newUser.address;
+      u.parentName = newUser.parentName;
     } else if (newUser.role === "parents") {
-      userData.address = newUser.address;
-      userData.childName = newUser.childName;
-      userData.childClass = newUser.childClass;
-      userData.childSection = newUser.childSection;
-      userData.relationWithChild = newUser.relationWithChild;
+      u.address = newUser.address;
+      u.childName = newUser.childName;
+      u.childClass = newUser.childClass;
+      u.childSection = newUser.childSection;
+      u.relationWithChild = newUser.relationWithChild;
     } else if (newUser.role === "staff") {
-      userData.qualification = newUser.qualification;
-      userData.designation = newUser.designation;
+      u.qualification = newUser.qualification;
+      u.designation = newUser.designation;
     }
-    
-    const updatedUsers = [userData, ...allUsers];
-    setAllUsers(updatedUsers);
-    saveUserData(updatedUsers);
-    
-    showMessage("User created successfully!");
-    setNewUser({ name: "", number: "", password: "", role: "", schoolName: "", academicYear: "2026-27" });
+
+    const updated = [u, ...allUsers];
+    setAllUsers(updated); 
+    saveUserData(updated);
+
+    // Flow Handling
+    if (newUser.role === 'parents' && newUser.kids && newUser.kids.length > 0) {
+      const parentData = { ...u };
+      const kidsList = newUser.kids.map(k => ({
+        name: k.name,
+        className: k.admissionClass,
+        address: newUser.address,
+        academicYear: newUser.academicYear,
+        parentName: newUser.name,
+        number: newUser.number // default to parent's
+      }));
+
+      setRegistrationFlow({
+        active: true,
+        parentData: parentData,
+        kidsList: kidsList,
+        currentKidIndex: 0
+      });
+
+      // Switch to first kid
+      const firstKid = kidsList[0];
+      setNewUser({
+        ...newUser,
+        role: 'student',
+        name: firstKid.name,
+        className: firstKid.className,
+        address: firstKid.address,
+        academicYear: firstKid.academicYear,
+        parentName: firstKid.parentName,
+        number: firstKid.number,
+        password: ''
+      });
+      showMessage('Parent created. Now registering first student...', 'success');
+    } else if (registrationFlow.active) {
+      const nextIndex = registrationFlow.currentKidIndex + 1;
+      if (nextIndex < registrationFlow.kidsList.length) {
+        setRegistrationFlow({ ...registrationFlow, currentKidIndex: nextIndex });
+        const nextKid = registrationFlow.kidsList[nextIndex];
+        setNewUser({
+          ...newUser,
+          role: 'student',
+          name: nextKid.name,
+          className: nextKid.className,
+          address: nextKid.address,
+          academicYear: nextKid.academicYear,
+          parentName: nextKid.parentName,
+          number: nextKid.number,
+          password: ''
+        });
+        showMessage(`Student created. Now registering kid ${nextIndex + 1}...`, 'success');
+      } else {
+        // All kids done
+        setRegistrationFlow({ active: false, parentData: null, kidsList: [], currentKidIndex: 0 });
+        setNewUser({ 
+          name: "", number: "", password: "", role: "",
+          schoolName: "", schoolArea: "", board: "", schoolType: "",
+          subject: "", qualification: "",
+          address: "", childName: "", childClass: "", childSection: "", relationWithChild: "",
+          designation: "",
+          className: "", section: "", academicYear: "2026-27", parentName: "",
+          howManyKids: 1,
+          kids: [{ name: '', currentClass: '', admissionClass: '' }]
+        });
+        showMessage('All registrations complete!', 'success');
+      }
+    } else {
+      // Normal creation
+      showMessage('User created successfully!', 'success');
+      setNewUser({ 
+        name: "", number: "", password: "", role: "",
+        schoolName: "", schoolArea: "", board: "", schoolType: "",
+        subject: "", qualification: "",
+        address: "", childName: "", childClass: "", childSection: "", relationWithChild: "",
+        designation: "",
+        className: "", section: "", academicYear: "2026-27", parentName: "",
+        howManyKids: 1,
+        kids: [{ name: '', currentClass: '', admissionClass: '' }]
+      });
+    }
+
+    setFormErrors({});
     refreshData();
   };
 
   const handleUpdateUser = () => {
     if (!editingUser) return;
-    if (!newUser.name || !newUser.number || !newUser.role) {
+    const errors = {};
+    if (!newUser.name) errors.name = true;
+    if (!newUser.number) errors.number = true;
+    if (!newUser.role) errors.role = true;
+
+    if (Object.keys(errors).length > 0) {
+      setFormErrors(errors);
       showMessage("Please fill all fields", "error");
       return;
     }
+
     const normalizedNumber = sanitizePhoneNumber(newUser.number);
     if (!isValidPhoneNumber(normalizedNumber)) {
+      setFormErrors({ number: true });
       showMessage(getPhoneValidationMessage(), "error");
       return;
     }
+    
+    setFormErrors({});
     
     const updatedUsers = allUsers.map(u => 
       u.id === editingUser.id ? { ...u, ...newUser, number: normalizedNumber, password: newUser.password || u.password } : u
@@ -946,6 +1153,7 @@ const confirmPasswordReset = () => {
   const handleCsvFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setCsvFileName(file.name);
     
     Papa.parse(file, {
       header: true,
@@ -963,9 +1171,26 @@ const confirmPasswordReset = () => {
         }
         
         const errors = [];
+        const seenNumbers = new Set();
+        
         filteredData.forEach((row, idx) => {
+          const normalizedNumber = sanitizePhoneNumber(row.number);
+          
           if (!row.name || !row.number || !row.role) {
             errors.push(`Row ${idx + 1}: Missing required fields (name, number, role)`);
+          }
+          if (row.number && !isValidPhoneNumber(normalizedNumber)) {
+            errors.push(`Row ${idx + 1}: ${getPhoneValidationMessage()}`);
+          }
+          
+          // Check for duplicates
+          if (normalizedNumber) {
+            if (seenNumbers.has(normalizedNumber)) {
+              errors.push(`Row ${idx + 1}: Duplicate phone number in CSV`);
+            } else if (allUsers.some(u => sanitizePhoneNumber(u.number) === normalizedNumber)) {
+              errors.push(`Row ${idx + 1}: User with this phone number already exists`);
+            }
+            seenNumbers.add(normalizedNumber);
           }
         });
         
@@ -1057,6 +1282,7 @@ Lisa Staff,9876543213,123456,staff,City School,,,,,Graduate,,,,,Librarian,2026-2
   const handleAdminCsvFileSelect = (e) => {
     const file = e.target.files[0];
     if (!file) return;
+    setAdminCsvFileName(file.name);
     
     Papa.parse(file, {
       header: true,
@@ -1075,15 +1301,30 @@ Lisa Staff,9876543213,123456,staff,City School,,,,,Graduate,,,,,Librarian,2026-2
         
         const errors = [];
         const requiredFields = ['name', 'number', 'schoolName'];
+        const seenNumbers = new Set();
         
         filteredData.forEach((row, idx) => {
-        const missingFields = requiredFields.filter(field => !row[field] || !row[field].trim());
-        if (missingFields.length > 0) {
-          errors.push(`Row ${idx + 1}: Missing required fields - ${missingFields.join(', ')}`);
-        } else if (!isValidPhoneNumber(sanitizePhoneNumber(row.number))) {
-          errors.push(`Row ${idx + 1}: ${getPhoneValidationMessage()}`);
-        }
-      });
+          const normalizedNumber = sanitizePhoneNumber(row.number);
+          const missingFields = requiredFields.filter(field => !row[field] || !row[field].trim());
+          
+          if (missingFields.length > 0) {
+            errors.push(`Row ${idx + 1}: Missing required fields - ${missingFields.join(', ')}`);
+          }
+          
+          if (row.number && !isValidPhoneNumber(normalizedNumber)) {
+            errors.push(`Row ${idx + 1}: ${getPhoneValidationMessage()}`);
+          }
+          
+          // Check for duplicates
+          if (normalizedNumber) {
+            if (seenNumbers.has(normalizedNumber)) {
+              errors.push(`Row ${idx + 1}: Duplicate phone number in CSV`);
+            } else if (allUsers.some(u => sanitizePhoneNumber(u.number) === normalizedNumber)) {
+              errors.push(`Row ${idx + 1}: Admin/User with this phone number already exists`);
+            }
+            seenNumbers.add(normalizedNumber);
+          }
+        });
         
         setAdminCsvErrors(errors);
         setAdminCsvData(filteredData);
@@ -1153,7 +1394,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
         const newAdmin = {
           id: generateId(),
           name: row.name.trim(),
-          number: sanitizePhoneNumber(row.number),
+          number: normalizedNumber,
           password: row.password && String(row.password).trim() !== '' ? String(row.password).trim() : `VSMS@${String(sanitizePhoneNumber(row.number)).slice(-4)}`,
           role: "admin",
           schoolName: row.schoolName?.trim() || "",
@@ -1174,8 +1415,8 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
           return;
         }
         
-        if (classArray.length === 0 || sectionArray.length === 0 || yearArray.length === 0 || boardArray.length === 0) {
-          errors.push(`Row ${index + 1}: Please select at least one Class, Section, Academic Year, and Board`);
+        if (classArray.length === 0 || yearArray.length === 0 || boardArray.length === 0) {
+          errors.push(`Row ${index + 1}: Please select at least one Class, Academic Year, and Board`);
           return;
         }
         
@@ -1212,7 +1453,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
       list = list.filter((u) => u.role === listFilterRole);
     }
     
-    if (selectedSchoolFilter) {
+    if (selectedSchoolFilter && selectedSchoolFilter !== "all") {
       list = list.filter((u) => u.schoolName === selectedSchoolFilter);
     }
 
@@ -1388,7 +1629,12 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
             setNewUser({ name: "", number: "", password: "", role: "", schoolName: "" });
           }}
           onSave={(updatedUser) => {
-            const updatedUsers = allUsers.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser } : u);
+            const normalizedNumber = sanitizePhoneNumber(updatedUser.number);
+            if (allUsers.some(u => u.id !== updatedUser.id && sanitizePhoneNumber(u.number) === normalizedNumber)) {
+              showMessage("Another account with this phone number already exists!", "error");
+              return;
+            }
+            const updatedUsers = allUsers.map(u => u.id === updatedUser.id ? { ...u, ...updatedUser, number: normalizedNumber } : u);
             setAllUsers(updatedUsers);
             saveUserData(updatedUsers);
             showMessage(`User ${updatedUser.name} updated successfully!`, 'success');
@@ -1673,7 +1919,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
             <div className="mb-4 p-3 bg-blue-50 rounded-lg border border-blue-200">
               <p className="text-sm text-blue-800 font-semibold mb-2">📋 CSV Format Instructions:</p>
               <ul className="text-xs text-blue-700 space-y-1 list-disc pl-4">
-                <li><b>Required fields:</b> name, number, password, schoolName</li>
+                <li><b>Required fields:</b> name, number, schoolName</li>
                 <li><b>Optional fields:</b> schoolArea, board, medium</li>
                 <li><b>For multiple values (classes/sections/years/boards):</b> Use comma separated values</li>
                 <li><b>Example for className:</b> "Nursery, LKG, UKG, 1, 2, 3"</li>
@@ -1687,12 +1933,22 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
               <label className={`block text-sm font-medium mb-2 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
                 Select CSV File
               </label>
-              <input 
-                type="file" 
-                accept=".csv" 
-                onChange={handleAdminCsvFileSelect}
-                className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
-              />
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <input 
+                    type="file" 
+                    accept=".csv" 
+                    onChange={handleAdminCsvFileSelect}
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer z-10"
+                  />
+                  <button className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 transition flex items-center gap-2 shadow-sm">
+                    📁 Choose CSV File
+                  </button>
+                </div>
+                <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} italic truncate max-w-[250px]`}>
+                  {adminCsvFileName || "No file chosen"}
+                </span>
+              </div>
             </div>
             
             {adminCsvData.length > 0 && (
@@ -1704,11 +1960,16 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
             )}
             
             {adminCsvErrors.length > 0 && (
-              <div className="mb-4 p-3 bg-red-50 rounded-lg max-h-40 overflow-y-auto">
-                <p className="text-sm font-semibold text-red-800 mb-2">❌ Errors found:</p>
-                <ul className="text-xs text-red-700 space-y-1 list-disc pl-4">
+              <div className="mb-4 p-3 bg-red-50 rounded-lg max-h-60 overflow-y-auto border border-red-200 shadow-inner">
+                <p className="text-sm font-bold text-red-800 mb-2 flex items-center gap-2">
+                  <span>❌ Errors found in CSV ({adminCsvErrors.length}):</span>
+                </p>
+                <ul className="text-xs text-red-700 space-y-1.5 pl-2">
                   {adminCsvErrors.map((err, i) => (
-                    <li key={i}>{err}</li>
+                    <li key={i} className="flex gap-2">
+                      <span className="font-bold shrink-0">•</span>
+                      <span>{err}</span>
+                    </li>
                   ))}
                 </ul>
               </div>
@@ -1727,6 +1988,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   setShowAdminCsvModal(false);
                   setAdminCsvData([]);
                   setAdminCsvErrors([]);
+                  setAdminCsvFileName("");
                 }} 
                 className="bg-gray-500 text-white px-4 py-2 rounded-lg hover:bg-gray-600"
               >
@@ -1759,17 +2021,18 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
             <div className="flex gap-2 mt-4">
               <button 
                 onClick={() => {
-                  if (!newItemInput.trim()) {
+                  const value = newItemInput.trim();
+                  if (!value) {
                     showMessage("Please enter a value", "error");
                     return;
                   }
                   
                   if (addItemType === "class") {
-                    if (availableClasses.includes(newItemInput)) {
-                      showMessage("Class already exists!", "error");
+                    if (availableClasses.some(c => c.trim().toLowerCase() === value.toLowerCase())) {
+                      showMessage(`Class "${value}" already exists!`, "error");
                       return;
                     }
-                    const updatedClasses = [...availableClasses, newItemInput].sort((a, b) => {
+                    const updatedClasses = [...new Set([...availableClasses, value])].sort((a, b) => {
                       const order = { "Nursery": 1, "LKG": 2, "UKG": 3 };
                       const aOrder = order[a] || (isNaN(a) ? 999 : parseInt(a) + 10);
                       const bOrder = order[b] || (isNaN(b) ? 999 : parseInt(b) + 10);
@@ -1777,59 +2040,62 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     });
                     setAvailableClasses(updatedClasses);
                     saveLocalData(STORAGE_KEYS.CLASSES, updatedClasses);
-                    if (!tempSelectedClasses.includes(newItemInput)) {
-                      setTempSelectedClasses([...tempSelectedClasses, newItemInput]);
+                    if (!tempSelectedClasses.includes(value)) {
+                      setTempSelectedClasses([...tempSelectedClasses, value]);
                     }
-                    showMessage(`Class "${newItemInput}" added successfully!`, "success");
+                    showMessage(`Class "${value}" added successfully!`, "success");
                   } 
                   else if (addItemType === "section") {
-                    if (availableSections.includes(newItemInput)) {
-                      showMessage("Section already exists!", "error");
+                    if (availableSections.some(s => s.trim().toLowerCase() === value.toLowerCase())) {
+                      showMessage(`Section "${value}" already exists!`, "error");
                       return;
                     }
-                    const updatedSections = [...availableSections, newItemInput].sort();
+                    const updatedSections = [...new Set([...availableSections, value])].sort();
                     setAvailableSections(updatedSections);
                     saveLocalData(STORAGE_KEYS.SECTIONS, updatedSections);
-                    if (!tempSelectedSections.includes(newItemInput)) {
-                      setTempSelectedSections([...tempSelectedSections, newItemInput]);
+                    if (!tempSelectedSections.includes(value)) {
+                      setTempSelectedSections([...tempSelectedSections, value]);
                     }
-                    showMessage(`Section "${newItemInput}" added successfully!`, "success");
+                    showMessage(`Section "${value}" added successfully!`, "success");
                   } 
                   else if (addItemType === "year") {
-                    if (availableAcademicYears.includes(newItemInput)) {
-                      showMessage("Academic Year already exists!", "error");
+                    if (availableAcademicYears.some(y => y.trim().toLowerCase() === value.toLowerCase())) {
+                      showMessage(`Academic Year "${value}" already exists!`, "error");
                       return;
                     }
-                    const updatedYears = [...availableAcademicYears, newItemInput].sort();
+                    const updatedYears = [...new Set([...availableAcademicYears, value])].sort();
                     setAvailableAcademicYears(updatedYears);
                     saveLocalData(STORAGE_KEYS.ACADEMIC_YEARS, updatedYears);
-                    if (!tempSelectedYears.includes(newItemInput)) {
-                      setTempSelectedYears([...tempSelectedYears, newItemInput]);
+                    if (!tempSelectedYears.includes(value)) {
+                      setTempSelectedYears([...tempSelectedYears, value]);
                     }
-                    showMessage(`Academic Year "${newItemInput}" added successfully!`, "success");
+                    showMessage(`Academic Year "${value}" added successfully!`, "success");
                   }
                   else if (addItemType === "board") {
-                    if (availableBoards.includes(newItemInput)) {
-                      showMessage("Board already exists!", "error");
+                    if (availableBoards.some(b => b.trim().toLowerCase() === value.toLowerCase())) {
+                      showMessage(`Board "${value}" already exists!`, "error");
                       return;
                     }
-                    const updatedBoards = [...availableBoards, newItemInput].sort();
+                    const updatedBoards = [...new Set([...availableBoards, value])].sort();
                     setAvailableBoards(updatedBoards);
                     saveLocalData(STORAGE_KEYS.BOARDS, updatedBoards);
-                    if (!tempSelectedBoards.includes(newItemInput)) {
-                      setTempSelectedBoards([...tempSelectedBoards, newItemInput]);
+                    if (!tempSelectedBoards.includes(value)) {
+                      setTempSelectedBoards([...tempSelectedBoards, value]);
                     }
-                    showMessage(`Board "${newItemInput}" added successfully!`, "success");
+                    showMessage(`Board "${value}" added successfully!`, "success");
                   }
                   else if (addItemType === "schooltype") {
-                    if (availableSchoolTypes.includes(newItemInput)) {
-                      showMessage("School type already exists!", "error");
+                    if (availableSchoolTypes.some(t => t.trim().toLowerCase() === value.toLowerCase())) {
+                      showMessage(`School Type "${value}" already exists!`, "error");
                       return;
                     }
-                    const updatedTypes = [...availableSchoolTypes, newItemInput].sort();
+                    const updatedTypes = [...new Set([...availableSchoolTypes, value])].sort();
                     setAvailableSchoolTypes(updatedTypes);
                     saveLocalData(STORAGE_KEYS.SCHOOL_TYPES, updatedTypes);
-                    showMessage(`School Type "${newItemInput}" added successfully!`, "success");
+                    if (!tempSelectedSchoolTypes.includes(value)) {
+                      setTempSelectedSchoolTypes([...tempSelectedSchoolTypes, value]);
+                    }
+                    showMessage(`School Type "${value}" added successfully!`, "success");
                   }
                   
                   setShowAddItemModal(false);
@@ -1923,13 +2189,47 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
           <p className={`text-xs font-semibold uppercase tracking-wider mb-3 px-2 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>MENU</p>
           <div className="space-y-1">
             {navButtons.map((btn) => (
-              <button
-                key={btn.label}
-                onClick={() => { setActiveTab(btn.tab); setFilterRole(btn.filter); setDetailListRole(null); }}
-                className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium ${activeTab === btn.tab && filterRole === btn.filter ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
-              >
-                {btn.label}
-              </button>
+              <div key={btn.label} className="relative">
+                <button
+                  onClick={() => { 
+                    if (btn.isDropdown) {
+                      setShowSidebarUserMenu(!showSidebarUserMenu);
+                    } else {
+                      setActiveTab(btn.tab); 
+                      setFilterRole(btn.filter); 
+                      setDetailListRole(null); 
+                      setShowSidebarUserMenu(false);
+                    }
+                  }}
+                  className={`w-full text-left px-4 py-2.5 rounded-lg transition-all duration-200 text-sm font-medium flex items-center justify-between ${ (activeTab === btn.tab || (btn.isDropdown && ['teacher', 'student', 'parents', 'staff'].includes(activeTab))) ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700' : 'text-gray-700 hover:bg-gray-100')}`}
+                >
+                  {btn.label}
+                  {btn.isDropdown && (
+                    <svg className={`w-4 h-4 transition-transform ${showSidebarUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </button>
+                {btn.isDropdown && showSidebarUserMenu && (
+                  <div className={`mt-1 ml-4 space-y-1 border-l-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                    {btn.options.map((opt) => (
+                      <button
+                        key={opt.role}
+                        onClick={() => {
+                          setActiveTab(opt.role);
+                          setNewUser(prev => ({ ...prev, role: opt.role }));
+                          setListFilterRole(opt.role);
+                          setDetailListRole(null);
+                          setShowSidebarUserMenu(false);
+                        }}
+                        className={`w-full text-left px-4 py-2 rounded-lg text-xs transition-all ${activeTab === opt.role ? (isDarkMode ? 'text-blue-400 font-bold' : 'text-blue-600 font-bold') : (isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900')}`}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>
@@ -1971,15 +2271,53 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
 
         {/* Tab Navigation - Hide when in detail list mode */}
         {activeTab !== "detail-list" && (
-          <div className="flex flex-wrap gap-2 mb-6 pb-2 border-b overflow-x-auto">
+          <div className="flex flex-wrap gap-2 mb-6 pb-2 border-b">
             {navButtons.map((btn) => (
-              <button
-                key={btn.label}
-                onClick={() => { setActiveTab(btn.tab); setFilterRole(btn.filter); setDetailListRole(null); }}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${activeTab === btn.tab && filterRole === btn.filter ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
-              >
-                {btn.label}
-              </button>
+              <div key={btn.label} className="relative" ref={btn.isDropdown ? userMenuRef : null}>
+                <button
+                  onClick={() => { 
+                    if (btn.isDropdown) {
+                      setShowUserMenu(!showUserMenu);
+                    } else {
+                      setActiveTab(btn.tab); 
+                      setFilterRole(btn.filter); 
+                      setDetailListRole(null); 
+                      setShowUserMenu(false);
+                    }
+                  }}
+                  className={`px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap flex items-center gap-1 ${ (activeTab === btn.tab || (btn.isDropdown && ['teacher', 'student', 'parents', 'staff'].includes(activeTab))) ? (isDarkMode ? 'bg-blue-600 text-white' : 'bg-blue-500 text-white') : (isDarkMode ? 'text-gray-400 hover:text-white hover:bg-gray-800' : 'text-gray-600 hover:text-gray-900 hover:bg-gray-100')}`}
+                >
+                  {btn.label}
+                  {btn.isDropdown && (
+                    <svg className={`w-4 h-4 transition-transform ${showUserMenu ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                  )}
+                </button>
+                {btn.isDropdown && showUserMenu && (
+                  <div className={`absolute left-0 top-full mt-2 w-56 rounded-xl shadow-2xl z-[999] border backdrop-blur-md ${isDarkMode ? 'bg-gray-800/95 border-gray-700' : 'bg-white/95 border-gray-200'}`}>
+                    <div className="p-2 space-y-1">
+                      {btn.options.map((opt) => (
+                        <button
+                          key={opt.role}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setActiveTab(opt.role);
+                            setNewUser(prev => ({ ...prev, role: opt.role }));
+                            setListFilterRole(opt.role);
+                            setDetailListRole(null);
+                            setShowUserMenu(false);
+                          }}
+                          className={`w-full text-left px-4 py-2.5 rounded-lg text-sm transition-all duration-200 flex items-center gap-3 ${activeTab === opt.role ? (isDarkMode ? 'bg-blue-600 text-white font-bold' : 'bg-blue-500 text-white font-bold') : (isDarkMode ? 'text-gray-300 hover:bg-gray-700/50 hover:text-white' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900')}`}
+                        >
+                          <span className={`w-2 h-2 rounded-full ${activeTab === opt.role ? 'bg-white' : 'bg-blue-400'}`}></span>
+                          {opt.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         )}
@@ -2116,15 +2454,14 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
             </span>
           </div>
         </div>
-      ))}
-      {filteredOverviewUsers.filter(u => u.role !== 'superadmin').length === 0 && (
-        <div className={`text-center py-8 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>No users found for this search</div>
-      )}
-    </div>
-  </div>
-)}
-
-</div>
+                    ))}
+                    {filteredOverviewUsers.filter(u => u.role !== 'superadmin').length === 0 && (
+                      <div className={`text-center py-8 ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>No users found for this search</div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
           )}
 
           {/* CREATE ADMIN TAB */}
@@ -2205,13 +2542,13 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                 <div className="mb-4">
                   <h3 className={`font-semibold mb-3 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Step 2: Admin Details</h3>
                   <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                    <input type="text" placeholder="Full Name *" value={newUser.name} onChange={(e) => setNewUser({...newUser, name: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <input type="tel" placeholder="Phone Number *" value={newUser.number} onChange={(e) => setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)})} inputMode="numeric" maxLength={10} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                    <input type="text" placeholder="Full Name *" value={newUser.name} onChange={(e) => { setNewUser({...newUser, name: e.target.value}); if(formErrors.name) setFormErrors(prev => ({...prev, name: false})); }} className={`px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.name ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
+                    <input type="tel" placeholder="Phone Number *" value={newUser.number} onChange={(e) => { setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)}); if(formErrors.number) setFormErrors(prev => ({...prev, number: false})); }} inputMode="numeric" maxLength={10} className={`px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.number ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
                     <div className="relative">
                       <input type={showPassword ? "text" : "password"} placeholder="Password (Optional)" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className={`px-3 py-2 pr-8 border rounded-lg w-full text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
                       <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-2.5">{showPassword ? "🙈" : "👁️"}</button>
                     </div>
-                    <input type="text" placeholder="School Name *" value={newUser.schoolName} onChange={(e) => setNewUser({...newUser, schoolName: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                    <input type="text" placeholder="School Name *" value={newUser.schoolName} onChange={(e) => { setNewUser({...newUser, schoolName: e.target.value}); if(formErrors.schoolName) setFormErrors(prev => ({...prev, schoolName: false})); }} className={`px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.schoolName ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
                     <input type="text" placeholder="School Area" value={newUser.schoolArea} onChange={(e) => setNewUser({...newUser, schoolArea: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
                     <select value={newUser.schoolType} onChange={(e) => setNewUser({...newUser, schoolType: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
                       <option value="">Select School Type</option>
@@ -2221,42 +2558,44 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     </select>
                     
                     {/* Read-only display of selected items */}
-                    <div className={`p-2 border rounded-lg ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}>
+                    <div className={`p-2 border rounded-lg transition-all ${formErrors.years ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300')}`}>
                       <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Academic Years</label>
                       <p className="text-sm text-gray-400">{selectedAdminAcademicYears.length > 0 ? selectedAdminAcademicYears.join(", ") : "Not selected"}</p>
                     </div>
-                    <div className={`p-2 border rounded-lg ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}>
+                    <div className={`p-2 border rounded-lg transition-all ${formErrors.classes ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300')}`}>
                       <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Classes</label>
                       <p className="text-sm text-gray-400">{selectedAdminClasses.length > 0 ? selectedAdminClasses.join(", ") : "Not selected"}</p>
                     </div>
-                    <div className={`p-2 border rounded-lg ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}>
+                    <div className={`p-2 border rounded-lg transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}>
                       <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Sections</label>
                       <p className="text-sm text-gray-400">{selectedAdminSections.length > 0 ? selectedAdminSections.join(", ") : "Not selected"}</p>
                     </div>
                    
-                    <div className={`p-2 border rounded-lg ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}>
+                    <div className={`p-2 border rounded-lg transition-all ${formErrors.boards ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300')}`}>
                       <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Boards</label>
                       <p className="text-sm text-gray-400">{selectedAdminBoards.length > 0 ? selectedAdminBoards.join(", ") : "Not selected"}</p>
                     </div>
                   </div>
                 </div>
 
-                <div className="flex justify-start gap-3 mt-4">
-                  <button onClick={() => setShowAdminCsvModal(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center gap-2 shadow-md">
-                    📁 Bulk Upload CSV
-                  </button>
-                  <button onClick={downloadAdminSampleCSV} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2 shadow-md">
-                    📥 Download Sample CSV
-                  </button>
-                </div>
-                
-                <div className="mt-4 flex gap-2">
-                  <button onClick={editingAdminId ? handleUpdateAdmin : handleCreateAdmin} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">
-                    {editingAdminId ? "Update Admin" : "Create Admin"}
-                  </button>
-                  {editingAdminId && (
-                    <button onClick={resetAdminForm} className="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm">Cancel</button>
-                  )}
+                <div className="flex flex-wrap justify-between items-center gap-4 mt-6">
+                  <div className="flex gap-2">
+                    <button onClick={editingAdminId ? handleUpdateAdmin : handleCreateAdmin} className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-md transform transition hover:scale-105 active:scale-95">
+                      {editingAdminId ? "Update Admin" : "Create Admin"}
+                    </button>
+                    {editingAdminId && (
+                      <button onClick={resetAdminForm} className="bg-gray-500 text-white px-4 py-2 rounded-lg text-sm">Cancel</button>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3">
+                    <button onClick={() => setShowAdminCsvModal(true)} className="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 flex items-center gap-2 shadow-md">
+                      📁 Bulk Upload CSV
+                    </button>
+                    <button onClick={downloadAdminSampleCSV} className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex items-center gap-2 shadow-md">
+                      📥 Download Sample CSV
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -2281,33 +2620,12 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     </button>
                   </div>
                 </div>
-                
-                <div className="mb-4 grid gap-3 md:grid-cols-3">
-                  {/* <div>
-                    <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>School</label>
-                    <select value={selectedAdminFilter} onChange={(e) => setSelectedAdminFilter(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="all">All Schools</option>
-                      {adminSchoolOptions.map((school) => (
-                        <option key={school} value={school}>{school}</option>
-                      ))}
-                    </select>
-                  </div> */}
-                  {/* <div>
-                    <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Board</label>
-                    <select value={selectedAdminBoardFilter} onChange={(e) => setSelectedAdminBoardFilter(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="">All Boards</option>
-                      {adminBoardOptions.map((board) => (
-                        <option key={board} value={board}>{board}</option>
-                      ))}
-                    </select>
-                  </div> */}
-                  <div>
-                    <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Search</label>
-                    <input type="text" placeholder="Search by name, school, board, or phone..." value={adminSearchTerm} onChange={(e) => setAdminSearchTerm(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                  </div>
+                <div className="mb-4">
+                  <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Search</label>
+                  <input type="text" placeholder="Search by name, school, board, or phone..." value={adminSearchTerm} onChange={(e) => setAdminSearchTerm(e.target.value)} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
                 </div>
                 
-                <div className="space-y-2">
+                <div className="space-y-2" ref={adminListRef}>
                  {filteredAdmins.slice((adminPage - 1) * ADMIN_PER_PAGE, adminPage * ADMIN_PER_PAGE).map((admin) => (
                     <div key={admin.id} className={`flex justify-between items-center p-3 rounded-lg border ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                       <div>
@@ -2339,27 +2657,12 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                 </div>
 
                 {/* Pagination for Admins */}
-{Math.ceil(filteredAdmins.length / ADMIN_PER_PAGE) > 1 && (
-  <div className="flex justify-center gap-2 mt-4 pt-3 border-t">
-    <button
-      onClick={() => setAdminPage(p => Math.max(1, p - 1))}
-      disabled={adminPage === 1}
-      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-    >
-      Previous
-    </button>
-    <span className="px-3 py-1 text-sm text-gray-600">
-      Page {adminPage} of {Math.ceil(filteredAdmins.length / ADMIN_PER_PAGE)}
-    </span>
-    <button
-      onClick={() => setAdminPage(p => Math.min(Math.ceil(filteredAdmins.length / ADMIN_PER_PAGE), p + 1))}
-      disabled={adminPage === Math.ceil(filteredAdmins.length / ADMIN_PER_PAGE)}
-      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-    >
-      Next
-    </button>
-  </div>
-)}
+<Pagination 
+                  currentPage={adminPage} 
+                  totalPages={Math.ceil(filteredAdmins.length / ADMIN_PER_PAGE)} 
+                  onPageChange={(p) => { setAdminPage(p); adminListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} 
+                  isDarkMode={isDarkMode} 
+                />
 
  {showAdminEditModal && editingAdminData && (
                   <UserEditModal 
@@ -2375,117 +2678,278 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     onSave={handleSaveAdminEdit}
                   />
                 )}
-  </div>
-
-  
+              </div>
             </div>
           )}
 
-          {/* USER MANAGEMENT TAB */}
-          {activeTab === "users" && (
+          {/* USER MANAGEMENT TAB REPLACED BY ROLE TABS */}
+          {['teacher', 'student', 'parents', 'staff'].includes(activeTab) && (
             <div className="space-y-6">
               {/* Create User Form */}
               <div className={`p-6 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>Create User Account</h2>
+                <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                  Create {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Account
+                </h2>
                 
-                <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-                  <input type="text" placeholder="Full Name *" value={newUser.name} onChange={(e) => setNewUser({...newUser, name: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                  <input type="tel" placeholder="Phone Number *" value={newUser.number} onChange={(e) => setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)})} inputMode="numeric" maxLength={10} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                  <div className="relative">
-                    <input type={showPassword ? "text" : "password"} placeholder="Password (Optional)" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className={`px-3 py-2 pr-8 border rounded-lg w-full text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-2.5">{showPassword ? "🙈" : "👁️"}</button>
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                  <div className="md:col-span-4">
+                    <input type="text" placeholder="Full Name *" value={newUser.name} onChange={(e) => { setNewUser({...newUser, name: e.target.value}); if(formErrors.name) setFormErrors(prev => ({...prev, name: false})); }} className={`w-full px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.name ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
                   </div>
-                  <select value={newUser.role} onChange={(e) => setNewUser({...newUser, role: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                    <option value="">Select Role *</option>
-                    <option value="teacher">Teacher</option>
-                    <option value="student">Student</option>
-                    <option value="parents">Parent</option>
-                    <option value="staff">Non teaching Staff</option>
-                  </select>
-                  <div className="relative" ref={schoolDropdownRef}>
-                    <input 
-                      type="text" 
-                      placeholder="School Name" 
-                      value={schoolSearchQuery}
-                      onChange={(e) => {
-                        setSchoolSearchQuery(e.target.value);
-                        setShowSchoolDropdown(true);
-                      }}
-                      onFocus={() => setShowSchoolDropdown(true)}
-                      className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
-                    />
-                    {showSchoolDropdown && adminSchoolOptions.length > 0 && (
-                      <div className={`absolute z-10 w-full mt-1 max-h-40 overflow-y-auto border rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
-                        {adminSchoolOptions
-                          .filter(school => school.toLowerCase().includes(schoolSearchQuery.toLowerCase()))
-                          .map(school => (
-                            <div 
-                              key={school} 
-                              onClick={() => {
-                                setSchoolSearchQuery(school);
-                                setNewUser(prev => ({...prev, schoolName: school}));
-                                setShowSchoolDropdown(false);
-                              }}
-                              className={`px-3 py-2 cursor-pointer text-sm ${isDarkMode ? 'text-white hover:bg-gray-600' : 'text-gray-800 hover:bg-gray-100'}`}
-                            >
-                              {school}
-                            </div>
-                          ))}
-                        {adminSchoolOptions.filter(school => school.toLowerCase().includes(schoolSearchQuery.toLowerCase())).length === 0 && (
-                          <div className={`px-3 py-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>No schools found</div>
-                        )}
-                      </div>
-                    )}
+                  <div className="md:col-span-4">
+                    <input type="tel" placeholder="Phone Number *" value={newUser.number} onChange={(e) => { setNewUser({...newUser, number: sanitizePhoneNumber(e.target.value)}); if(formErrors.number) setFormErrors(prev => ({...prev, number: false})); }} inputMode="numeric" maxLength={10} className={`w-full px-3 py-2 border rounded-lg text-sm transition-all ${formErrors.number ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300')}`} />
+                  </div>
+                  <div className="md:col-span-4">
+                    <div className="relative">
+                      <input type={showPassword ? "text" : "password"} placeholder="Password (Optional)" value={newUser.password} onChange={(e) => setNewUser({...newUser, password: e.target.value})} className={`px-3 py-2 pr-8 border rounded-lg w-full text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                      <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-2 top-2.5">{showPassword ? "🙈" : "👁️"}</button>
+                    </div>
                   </div>
                 </div>
                 
                 {/* Dynamic fields */}
                 {newUser.role === "teacher" && (
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <input type="text" placeholder="Subject" value={newUser.subject} onChange={(e) => setNewUser({...newUser, subject: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <input type="text" placeholder="Qualification" value={newUser.qualification} onChange={(e) => setNewUser({...newUser, qualification: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-4">
+                      <div className="relative" ref={schoolDropdownRef}>
+                        <input 
+                          type="text" 
+                          placeholder="School Name" 
+                          value={schoolSearchQuery}
+                          onChange={(e) => { setSchoolSearchQuery(e.target.value); setShowSchoolDropdown(true); }}
+                          onFocus={() => setShowSchoolDropdown(true)}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
+                        />
+                        {showSchoolDropdown && adminSchoolOptions.length > 0 && (
+                          <div className={`absolute z-20 w-full mt-1 max-h-40 overflow-y-auto border rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
+                            {adminSchoolOptions.filter(school => school.toLowerCase().includes(schoolSearchQuery.toLowerCase())).map(school => (
+                              <div key={school} onClick={() => { setSchoolSearchQuery(school); setNewUser(prev => ({...prev, schoolName: school})); setShowSchoolDropdown(false); }} className={`px-3 py-2 cursor-pointer text-sm ${isDarkMode ? 'text-white hover:bg-gray-600' : 'text-gray-800 hover:bg-gray-100'}`}>{school}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="md:col-span-4">
+                      <input type="text" placeholder="Subject" value={newUser.subject} onChange={(e) => setNewUser({...newUser, subject: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                    </div>
+                    <div className="md:col-span-4">
+                      <input type="text" placeholder="Qualification" value={newUser.qualification} onChange={(e) => setNewUser({...newUser, qualification: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                    </div>
                   </div>
                 )}
                 
                 {newUser.role === "parents" && (
-                  <div className="mt-4 grid gap-4 md:grid-cols-5">
-                    <input type="text" placeholder="Address" value={newUser.address} onChange={(e) => setNewUser({...newUser, address: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <input type="text" placeholder="Child Name" value={newUser.childName} onChange={(e) => setNewUser({...newUser, childName: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <select value={newUser.childClass} onChange={(e) => setNewUser({...newUser, childClass: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="">Select Child Class</option>
-                      {availableClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
-                    </select>
-                    <select value={newUser.childSection} onChange={(e) => setNewUser({...newUser, childSection: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="">Select Child Section</option>
-                      {availableSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
-                    </select>
-                    <input type="text" placeholder="Relation" value={newUser.relationWithChild} onChange={(e) => setNewUser({...newUser, relationWithChild: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                  <div className="mt-4 space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                      <div className="md:col-span-6">
+                        <div className="relative" ref={schoolDropdownRef}>
+                          <input 
+                            type="text" 
+                            placeholder="School Name" 
+                            value={schoolSearchQuery}
+                            onChange={(e) => { setSchoolSearchQuery(e.target.value); setShowSchoolDropdown(true); }}
+                            onFocus={() => setShowSchoolDropdown(true)}
+                            className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
+                          />
+                          {showSchoolDropdown && adminSchoolOptions.length > 0 && (
+                            <div className={`absolute z-20 w-full mt-1 max-h-40 overflow-y-auto border rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
+                              {adminSchoolOptions.filter(school => school.toLowerCase().includes(schoolSearchQuery.toLowerCase())).map(school => (
+                                <div key={school} onClick={() => { setSchoolSearchQuery(school); setNewUser(prev => ({...prev, schoolName: school})); setShowSchoolDropdown(false); }} className={`px-3 py-2 cursor-pointer text-sm ${isDarkMode ? 'text-white hover:bg-gray-600' : 'text-gray-800 hover:bg-gray-100'}`}>{school}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="md:col-span-3">
+                        <input 
+                          type="text" 
+                          placeholder="Relation with Kid(s)" 
+                          value={newUser.relationWithChild} 
+                          onChange={(e) => setNewUser({...newUser, relationWithChild: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
+                      <div className="md:col-span-3 flex flex-col gap-1">
+                        <label className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>How many kids do you have?</label>
+                        <select 
+                          value={newUser.howManyKids}
+                          onChange={e => {
+                            const count = parseInt(e.target.value);
+                            const newKids = [...newUser.kids];
+                            if (count > newKids.length) {
+                              for (let i = newKids.length; i < count; i++) {
+                                newKids.push({ name: '', currentClass: '', admissionClass: '' });
+                              }
+                            } else {
+                              newKids.length = count;
+                            }
+                            setNewUser({...newUser, howManyKids: count, kids: newKids});
+                          }}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                        >
+                          {[1,2,3,4,5,6].map(n => <option key={n} value={n}>{n}</option>)}
+                        </select>
+                      </div>
+                      <div className="md:col-span-12">
+                        <input 
+                          type="text" 
+                          placeholder="Address" 
+                          value={newUser.address} 
+                          onChange={(e) => setNewUser({...newUser, address: e.target.value})} 
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border rounded-lg p-4 space-y-4 bg-gray-50 dark:bg-gray-700/50">
+                      <h3 className={`text-sm font-bold ${isDarkMode ? 'text-blue-400' : 'text-blue-800'}`}>Kids Details</h3>
+                      {newUser.kids.map((kid, index) => (
+                        <div key={index} className="grid gap-3 md:grid-cols-3 items-end border-b pb-4 last:border-0 last:pb-0">
+                          <div>
+                            <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Kid {index + 1} Name</label>
+                            <input 
+                              placeholder="Name" 
+                              value={kid.name} 
+                              onChange={e => {
+                                const newKids = [...newUser.kids];
+                                newKids[index].name = e.target.value;
+                                setNewUser({...newUser, kids: newKids});
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`} 
+                            />
+                          </div>
+                          <div>
+                            <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Kid {index + 1} Current Class</label>
+                            <select 
+                              value={kid.currentClass} 
+                              onChange={e => {
+                                const newKids = [...newUser.kids];
+                                newKids[index].currentClass = e.target.value;
+                                setNewUser({...newUser, kids: newKids});
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                            >
+                              <option value="">Select Class</option>
+                              {availableClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                            </select>
+                          </div>
+                          <div>
+                            <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Admission in Class</label>
+                            <select 
+                              value={kid.admissionClass} 
+                              onChange={e => {
+                                const newKids = [...newUser.kids];
+                                newKids[index].admissionClass = e.target.value;
+                                setNewUser({...newUser, kids: newKids});
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                            >
+                              <option value="">Select Class</option>
+                              {availableClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                            </select>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 )}
                 
                 {newUser.role === "staff" && (
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-                    <input type="text" placeholder="Qualification" value={newUser.qualification} onChange={(e) => setNewUser({...newUser, qualification: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <input type="text" placeholder="Designation" value={newUser.designation} onChange={(e) => setNewUser({...newUser, designation: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-4">
+                      <div className="relative" ref={schoolDropdownRef}>
+                        <input 
+                          type="text" 
+                          placeholder="School Name" 
+                          value={schoolSearchQuery}
+                          onChange={(e) => { setSchoolSearchQuery(e.target.value); setShowSchoolDropdown(true); }}
+                          onFocus={() => setShowSchoolDropdown(true)}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
+                        />
+                        {showSchoolDropdown && adminSchoolOptions.length > 0 && (
+                          <div className={`absolute z-20 w-full mt-1 max-h-40 overflow-y-auto border rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
+                            {adminSchoolOptions.filter(school => school.toLowerCase().includes(schoolSearchQuery.toLowerCase())).map(school => (
+                              <div key={school} onClick={() => { setSchoolSearchQuery(school); setNewUser(prev => ({...prev, schoolName: school})); setShowSchoolDropdown(false); }} className={`px-3 py-2 cursor-pointer text-sm ${isDarkMode ? 'text-white hover:bg-gray-600' : 'text-gray-800 hover:bg-gray-100'}`}>{school}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="md:col-span-4">
+                      <input type="text" placeholder="Qualification" value={newUser.qualification} onChange={(e) => setNewUser({...newUser, qualification: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                    </div>
+                    <div className="md:col-span-4">
+                      <input type="text" placeholder="Designation" value={newUser.designation} onChange={(e) => setNewUser({...newUser, designation: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                    </div>
                   </div>
                 )}
                 
                 {newUser.role === "student" && (
-                  <div className="mt-4 grid gap-4 md:grid-cols-5">
-                    <select value={newUser.className} onChange={(e) => setNewUser({...newUser, className: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="">Select Class</option>
-                      {availableClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
-                    </select>
-                    <select value={newUser.section} onChange={(e) => setNewUser({...newUser, section: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="">Select Section</option>
-                      {availableSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
-                    </select>
-                    <select value={newUser.academicYear} onChange={(e) => setNewUser({...newUser, academicYear: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
-                      <option value="">Select Academic Year</option>
-                      {availableAcademicYears.map(year => <option key={year} value={year}>{year}</option>)}
-                    </select>
-                    <input type="text" placeholder="Address" value={newUser.address} onChange={(e) => setNewUser({...newUser, address: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
-                    <input type="text" placeholder="Parent Name" value={newUser.parentName} onChange={(e) => setNewUser({...newUser, parentName: e.target.value})} className={`px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
+                  <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+                    <div className="md:col-span-3">
+                      <div className="relative" ref={schoolDropdownRef}>
+                        <input 
+                          type="text" 
+                          placeholder="School Name" 
+                          value={schoolSearchQuery}
+                          onChange={(e) => { setSchoolSearchQuery(e.target.value); setShowSchoolDropdown(true); }}
+                          onFocus={() => setShowSchoolDropdown(true)}
+                          className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`}
+                        />
+                        {showSchoolDropdown && adminSchoolOptions.length > 0 && (
+                          <div className={`absolute z-20 w-full mt-1 max-h-40 overflow-y-auto border rounded-lg shadow-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
+                            {adminSchoolOptions.filter(school => school.toLowerCase().includes(schoolSearchQuery.toLowerCase())).map(school => (
+                              <div key={school} onClick={() => { setSchoolSearchQuery(school); setNewUser(prev => ({...prev, schoolName: school})); setShowSchoolDropdown(false); }} className={`px-3 py-2 cursor-pointer text-sm ${isDarkMode ? 'text-white hover:bg-gray-600' : 'text-gray-800 hover:bg-gray-100'}`}>{school}</div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="md:col-span-3">
+                      <select 
+                        value={newUser.className} 
+                        onChange={(e) => setNewUser({...newUser, className: e.target.value})} 
+                        disabled={registrationFlow.active}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                      >
+                        <option value="">Select Class</option>
+                        {availableClasses.map(cls => <option key={cls} value={cls}>{cls}</option>)}
+                      </select>
+                    </div>
+                    <div className="md:col-span-3">
+                      <select value={newUser.section} onChange={(e) => setNewUser({...newUser, section: e.target.value})} className={`w-full px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}>
+                        <option value="">Select Section</option>
+                        {availableSections.map(sec => <option key={sec} value={sec}>{sec}</option>)}
+                      </select>
+                    </div>
+                    <div className="md:col-span-3">
+                      <select 
+                        value={newUser.academicYear} 
+                        onChange={(e) => setNewUser({...newUser, academicYear: e.target.value})} 
+                        disabled={registrationFlow.active}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300'}`}
+                      >
+                        <option value="">Academic Year</option>
+                        {availableAcademicYears.map(year => <option key={year} value={year}>{year}</option>)}
+                      </select>
+                    </div>
+                    <div className="md:col-span-3">
+                      <input 
+                        placeholder="Parent Name" 
+                        value={newUser.parentName} 
+                        onChange={(e) => setNewUser({...newUser, parentName: e.target.value})} 
+                        disabled={registrationFlow.active}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                      />
+                    </div>
+                    <div className="md:col-span-9">
+                      <input 
+                        placeholder="Address" 
+                        value={newUser.address} 
+                        onChange={(e) => setNewUser({...newUser, address: e.target.value})} 
+                        disabled={registrationFlow.active}
+                        className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
+                      />
+                    </div>
                   </div>
                 )}
 
@@ -2530,14 +2994,38 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   </p>
                 </div>
                 
-                <div className="mt-4">
-                  <button onClick={handleCreateUser} className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">Create User</button>
-                </div>   */}
+                <div className="mt-4 flex gap-3 items-center">
+                  <button 
+                    onClick={handleCreateUser} 
+                    className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg transition-all active:scale-95"
+                  >
+                    {registrationFlow.active ? `Add Kid ${registrationFlow.currentKidIndex + 1} (${registrationFlow.kidsList[registrationFlow.currentKidIndex].name})` : `Create ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Account`}
+                  </button>
+                  {registrationFlow.active && (
+                    <button 
+                      onClick={() => {
+                        setRegistrationFlow({ active: false, parentData: null, kidsList: [], currentKidIndex: 0 });
+                        setNewUser({ 
+                          name: "", number: "", password: "", role: "",
+                          schoolName: "", schoolArea: "", board: "", schoolType: "",
+                          subject: "", qualification: "", address: "", academicYear: "2026-27",
+                          parentName: "", childName: "", childClass: "", childSection: "", 
+                          relationWithChild: "", designation: "",
+                          howManyKids: 1,
+                          kids: [{ name: '', currentClass: '', admissionClass: '' }]
+                        });
+                      }}
+                      className="px-4 py-2 border border-red-300 text-red-600 rounded-lg text-sm hover:bg-red-50"
+                    >
+                      Cancel Flow
+                    </button>
+                  )}
+                </div>
 
                 {/* CSV Upload */}
                 <div className="mt-4 p-3 bg-gradient-to-r from-emerald-50 to-green-50 rounded-lg border-2 border-dashed border-emerald-200">
                   <h3 className="text-sm font-bold text-emerald-800 mb-1">📁 Bulk Upload Users via CSV</h3>
-                  <p className="text-xs text-gray-600 mb-2">Required fields: <b>name, number, password, role</b></p>
+                  <p className="text-xs text-gray-600 mb-2">Required fields: <b>name, number,role</b></p>
                   <div className="space-y-2">
                     <div className="flex items-center gap-2 flex-wrap">
   <div className="relative">
@@ -2555,9 +3043,9 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
     </button>
   </div>
   <span className="text-xs text-gray-500">
-    {csvData.length > 0 ? `${csvData.length} file(s) selected` : "No file chosen"}
+    {csvFileName || "No file chosen"}
   </span>
-  <button onClick={() => { setCsvData([]); setCsvErrors([]); }} className="px-2 py-1 bg-red-500 rounded text-xs">Clear</button>
+  <button onClick={() => { setCsvData([]); setCsvErrors([]); setCsvFileName(""); }} className="px-2 py-1 bg-red-500 rounded text-xs">Clear</button>
   <button onClick={downloadSampleCSV} className="px-2 py-1 bg-blue-500 text-white rounded text-xs">⬇️ Sample CSV</button>
 </div>
                     
@@ -2571,9 +3059,17 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     )}
                     
                     {csvErrors.length > 0 && (
-                      <div className="p-2 bg-red-50 rounded">
-                        <ul className="text-xs text-red-800">
-                          {csvErrors.slice(0, 3).map((e, i) => <li key={i}>• {e}</li>)}
+                      <div className="p-3 bg-red-50 rounded-lg border border-red-200 max-h-60 overflow-y-auto shadow-inner">
+                        <p className="text-xs font-bold text-red-800 mb-2 flex items-center gap-2">
+                          <span>❌ Validation Errors ({csvErrors.length}):</span>
+                        </p>
+                        <ul className="text-xs text-red-700 space-y-1.5 pl-1">
+                          {csvErrors.map((e, i) => (
+                            <li key={i} className="flex gap-2">
+                              <span className="font-bold shrink-0">•</span>
+                              <span>{e}</span>
+                            </li>
+                          ))}
                         </ul>
                       </div>
                     )}
@@ -2584,7 +3080,9 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
               {/* All Users List - Newest first */}
               <div className={`p-6 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
                 <div className="flex flex-wrap justify-between items-center mb-4 gap-3">
-                  <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>All Users</h2>
+                  <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                    All {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')}s
+                  </h2>
                   <div className="flex items-center gap-2">
                     <span className={`text-xs ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                       {filteredUsers.length} user(s)
@@ -2607,57 +3105,41 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   <div className="grid gap-3 md:grid-cols-5">
                     <div>
                       <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>School</label>
-                      <select value={selectedSchoolFilter} onChange={(e) => {
-                          setSelectedSchoolFilter(e.target.value);
-                          setListFilterRole("all");
-                          setSelectedBoardFilters([]);
-                          setSelectedSubjectFilters([]);
-                          setSelectedClassFilter("");
-                          setSelectedSectionFilter("");
-                          setSelectedAcademicYear("");
-                      }} className={`w-full px-2 py-1.5 border rounded text-sm ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
-                        <option value="">All Schools</option>
-                        {schoolFilterOptions.map((school) => <option key={school} value={school}>{school}</option>)}
-                      </select>
-                    </div>
-
-                    {selectedSchoolFilter && (
-                      <div>
-                        <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Role</label>
-                        <select
-                          value={listFilterRole}
-                          onChange={(e) => {
-                            setListFilterRole(e.target.value);
+                        <select value={selectedSchoolFilter} onChange={(e) => {
+                            setSelectedSchoolFilter(e.target.value);
+                            setListFilterRole("all");
                             setSelectedBoardFilters([]);
                             setSelectedSubjectFilters([]);
                             setSelectedClassFilter("");
                             setSelectedSectionFilter("");
                             setSelectedAcademicYear("");
-                          }}
-                          className={`w-full px-2 py-1.5 border rounded text-sm ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}
-                        >
-                          <option value="all">All Roles</option>
-                          <option value="admin">Admins</option>
-                          <option value="teacher">Teachers</option>
-                          <option value="student">Students</option>
-                          <option value="parents">Parents</option>
-                          <option value="staff">Non teaching Staff</option>
+                        }} className={`w-full px-2 py-1.5 border rounded text-sm ${isDarkMode ? 'bg-gray-600 border-gray-500 text-white' : 'border-gray-300'}`}>
+                          <option value="">Select School</option>
+                          <option value="all">All Schools</option>
+                          {schoolFilterOptions.map((school) => <option key={school} value={school}>{school}</option>)}
                         </select>
+                      </div>
+
+                      {selectedSchoolFilter && (
+                        <div className="z-20 relative">
+                          <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Board</label>
+                          <MultiSelect
+                            options={boardFilterOptions}
+                            selectedValues={selectedBoardFilters}
+                            onChange={setSelectedBoardFilters}
+                            placeholder="All Boards"
+                            isDarkMode={isDarkMode}
+                          />
+                        </div>
+                      )}
+
+                    {selectedSchoolFilter && (
+                      <div className="z-10 relative">
+                        {/* Role selection hidden as it's tab-based */}
                       </div>
                     )}
 
-                    {selectedSchoolFilter && listFilterRole !== "all" && listFilterRole !== "staff" && listFilterRole !== "parents" && listFilterRole !== "admin" && (
-                      <div className="z-10 relative">
-                        <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Board</label>
-                        <MultiSelect
-                          options={boardFilterOptions}
-                          selectedValues={selectedBoardFilters}
-                          onChange={setSelectedBoardFilters}
-                          placeholder="Select Boards"
-                          isDarkMode={isDarkMode}
-                        />
-                      </div>
-                    )}
+
                     
                     {selectedSchoolFilter && listFilterRole === "student" && (
                       <>
@@ -2704,7 +3186,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   <input type="text" placeholder="Search by name, phone, school, board, subject, class..." value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} className={`w-full md:w-96 px-3 py-2 border rounded-lg text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} />
                 </div>
                 
-                <div className="space-y-2">
+                <div className="space-y-2" ref={userListRef}>
                   {filteredUsers.slice((userPage - 1) * USER_PER_PAGE, userPage * USER_PER_PAGE).map((u) =>(
                     <div key={u.id} className={`flex justify-between items-center p-3 rounded-lg border ${isDarkMode ? 'border-gray-700 hover:bg-gray-700' : 'border-gray-200 hover:bg-gray-50'}`}>
                       <div className="flex items-center gap-3">
@@ -2748,28 +3230,12 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                 </div>
 
                 {/* Pagination for Users */}
-{Math.ceil(filteredUsers.length / USER_PER_PAGE) > 1 && (
-  <div className="flex justify-center gap-2 mt-4 pt-3 border-t">
-    <button
-      onClick={() => setUserPage(p => Math.max(1, p - 1))}
-      disabled={userPage === 1}
-      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-    >
-      Previous
-    </button>
-    <span className="px-3 py-1 text-sm text-gray-600">
-      Page {userPage} of {Math.ceil(filteredUsers.length / USER_PER_PAGE)}
-    </span>
-    <button
-      onClick={() => setUserPage(p => Math.min(Math.ceil(filteredUsers.length / USER_PER_PAGE), p + 1))}
-      disabled={userPage === Math.ceil(filteredUsers.length / USER_PER_PAGE)}
-      className="px-3 py-1 rounded text-sm bg-blue-600 text-white disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700"
-    >
-
-      Next
-    </button>
-  </div>
-)}
+<Pagination 
+                  currentPage={userPage} 
+                  totalPages={Math.ceil(filteredUsers.length / USER_PER_PAGE)} 
+                  onPageChange={(p) => { setUserPage(p); userListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} 
+                  isDarkMode={isDarkMode} 
+                />
               </div>
             </div>
           )}
@@ -2794,16 +3260,16 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   />
                   
                   <button
-        onClick={() => {
-        setCsvDownloadUsers(filteredOverviewUsers.filter(u => u.role !== 'superadmin'));
-          setCsvDownloadRole("search_results");
-          setIsCsvModalOpen(true);
-        }}
-        className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium shadow flex items-center gap-2 text-sm transition"
-      >
-        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
-        Export
-      </button>
+                    onClick={() => {
+                      setCsvDownloadUsers(filteredDetailData);
+                      setCsvDownloadRole(detailListRole);
+                      setIsCsvModalOpen(true);
+                    }}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg font-medium shadow flex items-center gap-2 text-sm transition"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg>
+                    Export
+                  </button>
                 </div>
                 <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>
                   Showing {paginatedData.length} of {filteredDetailData.length} entries | Page {detailListPage} of {totalPages}
@@ -2814,7 +3280,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
              
                 
 
-              <div className="space-y-3">
+              <div className="space-y-3" ref={detailListRef}>
                 {paginatedData.map((item) => {
                   if (detailListRole === "admins") {
                     return (
@@ -2900,27 +3366,12 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
               </div>
 
               {/* Pagination */}
-              {totalPages > 1 && (
-                <div className="flex justify-center gap-2 mt-6">
-                  <button
-                    onClick={() => setDetailListPage(p => Math.max(1, p - 1))}
-                    disabled={detailListPage === 1}
-                    className={`px-3 py-1 rounded text-sm ${detailListPage === 1 ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                  >
-                    Previous
-                  </button>
-                  <span className={`px-3 py-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>
-                    Page {detailListPage} of {totalPages}
-                  </span>
-                  <button
-                    onClick={() => setDetailListPage(p => Math.min(totalPages, p + 1))}
-                    disabled={detailListPage === totalPages}
-                    className={`px-3 py-1 rounded text-sm ${detailListPage === totalPages ? 'bg-gray-300 cursor-not-allowed' : 'bg-blue-600 text-white hover:bg-blue-700'}`}
-                  >
-                    Next
-                  </button>
-                </div>
-              )}
+              <Pagination 
+                  currentPage={detailListPage} 
+                  totalPages={totalPages} 
+                  onPageChange={(p) => { setDetailListPage(p); detailListRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} 
+                  isDarkMode={isDarkMode} 
+                />
             </div>
           )}
         </div>
