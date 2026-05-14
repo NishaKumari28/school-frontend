@@ -198,15 +198,31 @@ export const libraryUtils = {
   bulkAddBooks: (newBooks) => {
     const books = libraryUtils.getBooks();
     newBooks.forEach(nb => {
-      const idx = books.findIndex(b => b.isbn === nb.isbn || (b.title === nb.title && b.author === nb.author));
-      if (idx !== -1) books[idx] = { ...books[idx], ...nb, stock: (books[idx].stock || 0) + (parseInt(nb.stock) || 1) };
-      else books.push({ ...nb, id: generateId(), stock: parseInt(nb.stock) || 1 });
+      const bookIsbn = String(nb.isbn || nb.id || '').trim();
+      const bookTitle = String(nb.title || '').trim();
+      
+      if (!bookIsbn && !bookTitle) return; // skip empty rows
+
+      const idx = books.findIndex(b => {
+         const matchIsbn = bookIsbn && (b.isbn === bookIsbn || b.id === bookIsbn);
+         const matchTitleAuthor = bookTitle && b.title === bookTitle && b.author === nb.author;
+         return matchIsbn || matchTitleAuthor;
+      });
+
+      if (idx !== -1) {
+        const currentStock = parseInt(books[idx].stock) || 0;
+        const addedStock = parseInt(nb.stock) || 1;
+        books[idx] = { ...books[idx], ...nb, id: books[idx].id, isbn: bookIsbn || books[idx].isbn, stock: currentStock + addedStock };
+      } else {
+        books.push({ ...nb, id: generateId(), isbn: bookIsbn, stock: parseInt(nb.stock) || 1 });
+      }
     });
     setLocalData(STORAGE_KEYS.LIBRARY_BOOKS, books);
   },
   bulkRemoveBooks: (ids) => {
     const books = libraryUtils.getBooks();
-    const filtered = books.filter(b => !ids.includes(b.id) && !ids.includes(b.isbn));
+    const cleanIds = ids.map(id => String(id || '').trim()).filter(Boolean);
+    const filtered = books.filter(b => !cleanIds.includes(String(b.id)) && !cleanIds.includes(String(b.isbn)));
     setLocalData(STORAGE_KEYS.LIBRARY_BOOKS, filtered);
   },
 
@@ -499,7 +515,43 @@ export const feeUtils = {
       invoices[idx].status = invoices[idx].paidAmount >= invoices[idx].totalFee ? 'paid' : 'partial';
       invoices[idx].lastPaidAt = new Date().toISOString();
       setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
-      // Notify other tabs/components to re-render
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
+    }
+  },
+  submitProof: (invoiceId, amount, screenshot) => {
+    const invoices = feeUtils.getAllInvoices();
+    const idx = invoices.findIndex(i => i.id === invoiceId);
+    if (idx !== -1) {
+      invoices[idx].paymentProof = {
+        amount: parseFloat(amount),
+        screenshot,
+        submittedAt: new Date().toISOString()
+      };
+      invoices[idx].status = 'processing';
+      setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
+    }
+  },
+  approvePayment: (invoiceId) => {
+    const invoices = feeUtils.getAllInvoices();
+    const idx = invoices.findIndex(i => i.id === invoiceId);
+    if (idx !== -1 && invoices[idx].paymentProof) {
+      const proof = invoices[idx].paymentProof;
+      invoices[idx].paidAmount = (parseFloat(invoices[idx].paidAmount) || 0) + proof.amount;
+      invoices[idx].status = invoices[idx].paidAmount >= invoices[idx].totalFee ? 'paid' : 'partial';
+      invoices[idx].lastPaidAt = new Date().toISOString();
+      delete invoices[idx].paymentProof;
+      setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
+      if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
+    }
+  },
+  rejectPayment: (invoiceId) => {
+    const invoices = feeUtils.getAllInvoices();
+    const idx = invoices.findIndex(i => i.id === invoiceId);
+    if (idx !== -1) {
+      invoices[idx].status = 'unpaid';
+      delete invoices[idx].paymentProof;
+      setLocalData(STORAGE_KEYS.FEE_INVOICES, invoices);
       if (typeof window !== 'undefined') window.dispatchEvent(new Event('storage'));
     }
   },

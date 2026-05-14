@@ -269,6 +269,7 @@ const [passwordResetUser, setPasswordResetUser] = useState(null);
   const detailListRef = useRef(null);
   const adminListRef = useRef(null);
   const userListRef = useRef(null);
+  const createUserFormRef = useRef(null);
 const ITEMS_PER_PAGE = 20;
 
   // New state for admin creation wizard - added boards
@@ -284,6 +285,32 @@ const ITEMS_PER_PAGE = 20;
   const [tempSelectedSections, setTempSelectedSections] = useState([]);
   const [tempSelectedYears, setTempSelectedYears] = useState([]);
   const [tempSelectedBoards, setTempSelectedBoards] = useState([]);
+
+  const getDefaultNewUser = (role = "") => ({
+    name: "", number: "", password: "", role,
+    schoolName: "", schoolArea: "", board: "", schoolType: "",
+    subject: "", qualification: "",
+    address: "", childName: "", childClass: "", childSection: "", relationWithChild: "",
+    designation: "",
+    className: "", section: "", academicYear: "2026-27", parentName: "",
+    howManyKids: 1,
+    kids: [{ name: '', currentClass: '', admissionClass: '' }]
+  });
+
+  const resetRoleUserForm = (role = activeTab) => {
+    setRegistrationFlow({ active: false, parentData: null, kidsList: [], currentKidIndex: 0 });
+    setFormErrors({});
+    setSchoolSearchQuery("");
+    setShowSchoolDropdown(false);
+    setNewUser(getDefaultNewUser(role));
+  };
+
+  const handleOpenCreateUserForm = (role = activeTab) => {
+    resetRoleUserForm(role);
+    requestAnimationFrame(() => {
+      createUserFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    });
+  };
 
 
   // Load theme preference and profile picture
@@ -1371,10 +1398,12 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
     
     adminCsvData.forEach((row, index) => {
       try {
+        const normalizedNumber = sanitizePhoneNumber(row.number);
         let classArray = [];
         if (row.className) {
           classArray = row.className.split(',').map(c => c.trim()).filter(c => c);
         }
+
         
         let sectionArray = [];
         if (row.section) {
@@ -2092,11 +2121,11 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     const updatedTypes = [...new Set([...availableSchoolTypes, value])].sort();
                     setAvailableSchoolTypes(updatedTypes);
                     saveLocalData(STORAGE_KEYS.SCHOOL_TYPES, updatedTypes);
-                    if (!tempSelectedSchoolTypes.includes(value)) {
-                      setTempSelectedSchoolTypes([...tempSelectedSchoolTypes, value]);
-                    }
+                    // schooltype selections are stored directly in newUser.schoolType
+                    setNewUser(prev => ({ ...prev, schoolType: value }));
                     showMessage(`School Type "${value}" added successfully!`, "success");
                   }
+
                   
                   setShowAddItemModal(false);
                   setNewItemInput("");
@@ -2211,15 +2240,17 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                   )}
                 </button>
                 {btn.isDropdown && showSidebarUserMenu && (
-                  <div className={`mt-1 ml-4 space-y-1 border-l-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
+                      <div className={`mt-1 ml-4 space-y-1 border-l-2 ${isDarkMode ? 'border-gray-700' : 'border-gray-200'}`}>
                     {btn.options.map((opt) => (
                       <button
                         key={opt.role}
-                        onClick={() => {
+                        onClick={(e) => {
+                          e.stopPropagation();
                           setActiveTab(opt.role);
                           setNewUser(prev => ({ ...prev, role: opt.role }));
                           setListFilterRole(opt.role);
                           setDetailListRole(null);
+                          setFormErrors({});
                           setShowSidebarUserMenu(false);
                         }}
                         className={`w-full text-left px-4 py-2 rounded-lg text-xs transition-all ${activeTab === opt.role ? (isDarkMode ? 'text-blue-400 font-bold' : 'text-blue-600 font-bold') : (isDarkMode ? 'text-gray-400 hover:text-white' : 'text-gray-500 hover:text-gray-900')}`}
@@ -2260,9 +2291,11 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
               </h2>
             </div>
           ) : (
-            <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-              {navButtons.find(b => b.tab === activeTab)?.label || 'Dashboard'}
-            </h2>
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <h2 className={`text-2xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                {navButtons.find(b => b.tab === activeTab)?.label || 'Dashboard'}
+              </h2>
+            </div>
           )}
           <p className={`text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'} mt-1`}>
             Welcome, {currentUser?.name || 'Super Admin'} :: {currentUser?.role || 'superadmin'}
@@ -2473,8 +2506,8 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                 </h2>
 
                                {/* Step 1: Select Access Rights for this Admin */}
-                <div className="mb-6 p-4 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50">
-                  <h3 className={`font-semibold mb-3 text-blue-800`}>Step 1: Select Access Rights for this Admin</h3>
+                <div className={`mb-6 p-4 rounded-lg border-2 border-dashed ${isDarkMode ? 'border-blue-600 bg-blue-900/40' : 'border-blue-300 bg-blue-50'}`}>
+                  <h3 className={`font-semibold mb-3 ${isDarkMode ? 'text-blue-300' : 'text-blue-800'}`}>Step 1: Select Access Rights for this Admin</h3>
                   <div className="grid gap-4 md:grid-cols-4">
                     {/* Academic Year - Pehle */}
                     <div>
@@ -2559,21 +2592,21 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     
                     {/* Read-only display of selected items */}
                     <div className={`p-2 border rounded-lg transition-all ${formErrors.years ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300')}`}>
-                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Academic Years</label>
-                      <p className="text-sm text-gray-400">{selectedAdminAcademicYears.length > 0 ? selectedAdminAcademicYears.join(", ") : "Not selected"}</p>
+                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Academic Years</label>
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{selectedAdminAcademicYears.length > 0 ? selectedAdminAcademicYears.join(", ") : "Not selected"}</p>
                     </div>
                     <div className={`p-2 border rounded-lg transition-all ${formErrors.classes ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300')}`}>
-                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Classes</label>
-                      <p className="text-sm text-gray-400">{selectedAdminClasses.length > 0 ? selectedAdminClasses.join(", ") : "Not selected"}</p>
+                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Classes</label>
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{selectedAdminClasses.length > 0 ? selectedAdminClasses.join(", ") : "Not selected"}</p>
                     </div>
                     <div className={`p-2 border rounded-lg transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300'}`}>
-                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Sections</label>
-                      <p className="text-sm text-gray-400">{selectedAdminSections.length > 0 ? selectedAdminSections.join(", ") : "Not selected"}</p>
+                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Sections</label>
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{selectedAdminSections.length > 0 ? selectedAdminSections.join(", ") : "Not selected"}</p>
                     </div>
                    
                     <div className={`p-2 border rounded-lg transition-all ${formErrors.boards ? 'border-red-500 ring-1 ring-red-500' : (isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-gray-50 border-gray-300')}`}>
-                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-400' : 'text-gray-600'}`}>Assigned Boards</label>
-                      <p className="text-sm text-gray-400">{selectedAdminBoards.length > 0 ? selectedAdminBoards.join(", ") : "Not selected"}</p>
+                      <label className={`block text-xs font-semibold mb-1 ${isDarkMode ? 'text-gray-300' : 'text-gray-700'}`}>Assigned Boards</label>
+                      <p className={`text-sm ${isDarkMode ? 'text-gray-200' : 'text-gray-800'}`}>{selectedAdminBoards.length > 0 ? selectedAdminBoards.join(", ") : "Not selected"}</p>
                     </div>
                   </div>
                 </div>
@@ -2685,11 +2718,21 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
           {/* USER MANAGEMENT TAB REPLACED BY ROLE TABS */}
           {['teacher', 'student', 'parents', 'staff'].includes(activeTab) && (
             <div className="space-y-6">
-              {/* Create User Form */}
-              <div className={`p-6 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
-                <h2 className={`text-xl font-bold mb-4 ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
-                  Create {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Account
-                </h2>
+
+              <div ref={createUserFormRef} className={`p-6 rounded-xl shadow-lg ${isDarkMode ? 'bg-gray-800' : 'bg-white'}`}>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <h2 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-gray-800'}`}>
+                    Create {activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Account
+                  </h2>
+                  <button
+                    type="button"
+                    onClick={() => resetRoleUserForm(activeTab)}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border transition ${isDarkMode ? 'border-gray-600 text-gray-200 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+                  >
+                    Reset Form
+                  </button>
+                </div>
+
                 
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
                   <div className="md:col-span-4">
@@ -2705,10 +2748,13 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     </div>
                   </div>
                 </div>
+
+                {/* Floating Add Button Removed as requested */}
                 
                 {/* Dynamic fields */}
                 {newUser.role === "teacher" && (
                   <div className="mt-4 grid grid-cols-1 md:grid-cols-12 gap-4">
+
                     <div className="md:col-span-4">
                       <div className="relative" ref={schoolDropdownRef}>
                         <input 
@@ -2949,6 +2995,7 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                         disabled={registrationFlow.active}
                         className={`w-full px-3 py-2 border rounded-lg text-sm ${registrationFlow.active ? 'bg-gray-100' : ''} ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white placeholder-gray-400' : 'border-gray-300'}`} 
                       />
+                      
                     </div>
                   </div>
                 )}
@@ -2993,13 +3040,14 @@ Sunrise Admin,9876543212,admin789,Sunrise School,Bangalore,"IB, IGCSE",pvt,"7, 8
                     Showing {filteredInlineLinkStudents.length} student{filteredInlineLinkStudents.length === 1 ? '' : 's'} for linking.
                   </p>
                 </div>
+                */}
                 
-                <div className="mt-4 flex gap-3 items-center">
+                <div className="mt-6 flex justify-end gap-3 items-center pt-4 border-t border-gray-200 dark:border-gray-700">
                   <button 
                     onClick={handleCreateUser} 
-                    className="bg-blue-600 text-white px-6 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg transition-all active:scale-95"
+                    className="bg-blue-600 text-white px-8 py-2.5 rounded-lg text-sm font-bold hover:bg-blue-700 shadow-lg transition-all active:scale-95"
                   >
-                    {registrationFlow.active ? `Add Kid ${registrationFlow.currentKidIndex + 1} (${registrationFlow.kidsList[registrationFlow.currentKidIndex].name})` : `Create ${activeTab.charAt(0).toUpperCase() + activeTab.slice(1).replace('parents', 'Parent')} Account`}
+                    {registrationFlow.active ? `Add Kid ${registrationFlow.currentKidIndex + 1} (${registrationFlow.kidsList[registrationFlow.currentKidIndex]?.name || ''})` : `Add ${activeTab === 'parents' ? 'Parent' : activeTab.charAt(0).toUpperCase() + activeTab.slice(1)}`}
                   </button>
                   {registrationFlow.active && (
                     <button 

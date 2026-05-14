@@ -210,12 +210,12 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
     const feePercent = totalRequestedFees > 0 ? Math.round((totalCollectedFees / totalRequestedFees) * 100) : 0;
 
     return [
-      {
+      /* {
         label: 'Hostel Occupancy',
         val: `${hostelPercent}%`,
         color: 'bg-blue-500',
         detail: `${occupiedBeds}/${totalBeds || 0} beds occupied`
-      },
+      }, */
       {
         label: 'Library Utilization',
         val: `${libraryPercent}%`,
@@ -382,7 +382,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
     return [
       ...feeActivities,
       ...notificationActivities,
-      ...hostelActivities,
+      /* ...hostelActivities, */
       ...libraryActivities,
       ...transportActivities,
       ...teacherAttendanceActivities
@@ -452,7 +452,7 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
   const navButtons = [
     { label: 'Overview', tab: 'overview', icon: '📊' },
     { label: 'Teacher Attendance', tab: 'teacher_attendance', icon: '👨‍🏫' },
-    { label: 'Hostel', tab: 'hostel', icon: '🏢' },
+    // { label: 'Hostel', tab: 'hostel', icon: '🏢' },
     { label: 'Library', tab: 'library', icon: '📚' },
     { label: 'Transport', tab: 'transport', icon: '🚌' },
     { label: 'Fees Control', tab: 'fees', icon: '💰' },
@@ -600,12 +600,12 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
                       title: 'Teacher Attendance',
                       desc: 'Maintain daily attendance records and check staff status.'
                     },
-                    {
+                    /* {
                       tab: 'hostel',
                       icon: '🏢',
                       title: 'Hostel',
                       desc: 'Manage hostel occupancy and student check-in/check-out operations.'
-                    },
+                    }, */
                     {
                       tab: 'library',
                       icon: '📚',
@@ -721,9 +721,9 @@ export default function StaffDashboard({ user, allUsers, showMessage }) {
             />
           )}
 
-          {activeTab === 'hostel' && (
+          {/* {activeTab === 'hostel' && (
             <StaffHostel isDarkMode={isDarkMode} showMessage={showMessage} students={students} />
-          )}
+          )} */}
 
           {activeTab === 'library' && (
             <StaffLibrary isDarkMode={isDarkMode} showMessage={showMessage} allUsers={allUsers} students={students} teachers={teachers} staffClassOptions={staffClassOptions} />

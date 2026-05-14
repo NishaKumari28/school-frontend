@@ -3,7 +3,7 @@ import { useMemo, useState, useEffect } from 'react';
 import DashboardCard from './DashboardCard';
 import UserTransportLog from './UserTransportLog';
 import TransportStatsPanel from './TransportStatsPanel';
-import { transportUtils } from '../utils/staffDataUtils';
+import { transportUtils, feeUtils } from '../utils/staffDataUtils';
 import {
   getAttendanceList,
   getHomeworkList,
@@ -11,7 +11,8 @@ import {
   getNotifications,
   getFeeStructure,
   getFeePayments,
-  updateUserProfilePhoto
+  updateUserProfilePhoto,
+  getUserList
 } from '../../components/auth/authService';
 
 const normalize = (value) => String(value || '').trim().toLowerCase();
@@ -33,6 +34,17 @@ const sortLatestFirst = (items = []) => [...items].sort((a, b) => getLatestTimes
 export default function ParentDashboard({ user, allUsers, showMessage, loadData }) {
   const [activeTab, setActiveTab] = useState('overview');
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [refresh, setRefresh] = useState(0);
+  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState(false);
+  const [selectedInvoice, setSelectedInvoice] = useState(null);
+  const [paymentAmount, setPaymentAmount] = useState('');
+  const [paymentScreenshot, setPaymentScreenshot] = useState('');
+
+  useEffect(() => {
+    const handleStorage = () => setRefresh(k => k + 1);
+    window.addEventListener('storage', handleStorage);
+    return () => window.removeEventListener('storage', handleStorage);
+  }, []);
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('school_theme');
@@ -58,18 +70,23 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
   const students = useMemo(() => allUsers.filter((entry) => entry.role === 'student'), [allUsers]);
 
   const linkedChild = useMemo(() => {
-    const directChild = students.find((student) => student.parentId === user.id);
-    if (directChild) return directChild;
+    // Priority 1: Use the first kid from the parent's kids array
+    if (user.kids && user.kids.length > 0) {
+      const firstKid = user.kids[0];
+      const match = students.find((student) => 
+        normalize(student.name) === normalize(firstKid.name) && 
+        normalize(student.className) === normalize(firstKid.currentClass)
+      );
+      if (match) return match;
+    }
 
+    // Priority 2: Try matching based on legacy child fields
     return students.find((student) => {
       const nameMatch = normalize(student.name) === normalize(user.childName);
       const classMatch = !user.childClass || normalize(student.className) === normalize(user.childClass);
-      const sectionMatch = !user.childSection && !user.childSec
-        ? true
-        : normalize(student.section || student.sec) === normalize(user.childSection || user.childSec);
-      return nameMatch && classMatch && sectionMatch;
+      return nameMatch && classMatch;
     }) || null;
-  }, [students, user]);
+  }, [students, user.kids, user.childName, user.childClass]);
 
   const attendanceRecords = useMemo(() => {
     if (!linkedChild) return [];
@@ -104,15 +121,137 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
 
   const feeDetails = useMemo(() => {
     if (!linkedChild) return null;
-    return getFeeStructure().find((fee) => normalize(fee.className) === normalize(linkedChild.className)) || null;
+    return feeUtils.getStructure(linkedChild.id) || null;
   }, [linkedChild]);
 
   const feePayments = useMemo(() => {
     if (!linkedChild) return [];
-    return getFeePayments()
-      .filter((payment) => payment.studentId === linkedChild.id && payment.parentId === user.id)
-      .sort((a, b) => new Date(b.requestedAt || b.paidAt) - new Date(a.requestedAt || a.paidAt));
-  }, [linkedChild, user.id]);
+    return feeUtils.getAllInvoices()
+      .filter((inv) => String(inv.studentId) === String(linkedChild.id))
+      .sort((a, b) => new Date(b.generatedAt) - new Date(a.generatedAt));
+  }, [linkedChild, refresh]);
+
+  const handlePayInvoice = (invoice) => {
+    setSelectedInvoice(invoice);
+    const balance = Math.max(0, (Number(invoice.totalFee) || 0) - (Number(invoice.paidAmount) || 0));
+    setPaymentAmount(balance);
+    setPaymentScreenshot('');
+    setIsPaymentModalOpen(true);
+  };
+
+  const handleScreenshotChange = (e) => {
+    const file = e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onloadend = () => setPaymentScreenshot(reader.result);
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const submitPaymentProof = () => {
+    if (!paymentAmount || isNaN(parseFloat(paymentAmount))) {
+      showMessage("Please enter a valid amount.", "error");
+      return;
+    }
+    if (!paymentScreenshot) {
+      showMessage("Payment screenshot is mandatory!", "error");
+      return;
+    }
+    feeUtils.submitProof(selectedInvoice.id, paymentAmount, paymentScreenshot);
+    setIsPaymentModalOpen(false);
+    setRefresh(k => k + 1);
+    showMessage("Payment proof submitted! Staff will verify and update status.", "success");
+  };
+
+  const formatCurrency = (value) => `Rs. ${(Number(value) || 0).toLocaleString()}`;
+
+  const buildInvoiceHtml = (invoice) => {
+    const FEE_FIELDS = [
+      { key: 'tuitionFee',      label: 'Tuition Fee' },
+      { key: 'libraryFee',      label: 'Library Fee' },
+      { key: 'electricityBill', label: 'Electricity Bill' },
+      { key: 'waterBill',       label: 'Water Bill' },
+      { key: 'dressFee',        label: 'Dress / Uniform Fee' },
+      { key: 'bookFee',         label: 'Book Fee' },
+      { key: 'transportFee',    label: 'Transport Fee' },
+      { key: 'fine',            label: 'Fine' },
+    ];
+
+    const lineItems = FEE_FIELDS
+      .filter((field) => Number(invoice[field.key]) > 0)
+      .map((field) => `
+        <tr>
+          <td style="padding:12px 0;border-bottom:1px solid #e2e8f0;font-weight:600;color:#475569;">${field.label}</td>
+          <td style="padding:12px 0;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;color:#0f172a;">${formatCurrency(invoice[field.key])}</td>
+        </tr>
+      `)
+      .join('');
+
+    const balance = Math.max(0, (Number(invoice.totalFee) || 0) - (Number(invoice.paidAmount) || 0));
+
+    return `
+      <!DOCTYPE html>
+      <html lang="en">
+        <head>
+          <meta charset="UTF-8" />
+          <title>${invoice.invoiceNo}</title>
+          <style>
+            body { font-family: Arial, sans-serif; background: #f8fafc; color: #0f172a; margin: 0; padding: 32px; }
+            .sheet { max-width: 760px; margin: 0 auto; background: #ffffff; border-radius: 24px; padding: 32px; box-shadow: 0 20px 50px rgba(15, 23, 42, 0.08); }
+            .muted { color: #64748b; }
+            .row { display: flex; justify-content: space-between; gap: 16px; }
+            .pill { display: inline-block; padding: 6px 12px; border-radius: 999px; background: #dbeafe; color: #1d4ed8; font-size: 12px; font-weight: 700; text-transform: uppercase; }
+            table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+            .summary { margin-top: 24px; padding: 20px; border-radius: 18px; background: #f8fafc; }
+            .summary .row { margin-top: 10px; }
+          </style>
+        </head>
+        <body>
+          <div class="sheet">
+            <div class="row" style="align-items:flex-start;">
+              <div>
+                <h1 style="margin:0 0 8px;font-size:28px;">Fee Invoice</h1>
+                <div class="muted" style="font-weight:700;">${invoice.invoiceNo}</div>
+              </div>
+              <span class="pill">${invoice.status}</span>
+            </div>
+            <div style="margin-top:24px;">
+              <div class="row">
+                <div>
+                  <div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;">Student</div>
+                  <div style="font-size:20px;font-weight:800;margin-top:6px;">${invoice.studentName || '-'}</div>
+                </div>
+                <div style="text-align:right;">
+                  <div class="muted" style="font-size:12px;font-weight:700;text-transform:uppercase;">Due Date</div>
+                  <div style="font-size:18px;font-weight:800;margin-top:6px;">${invoice.dueDate || '-'}</div>
+                </div>
+              </div>
+            </div>
+            <table><tbody>${lineItems}</tbody></table>
+            <div class="summary">
+              <div class="row"><span style="font-weight:700;">Total Fee</span><span style="font-weight:800;">${formatCurrency(invoice.totalFee)}</span></div>
+              <div class="row"><span style="font-weight:700;color:#059669;">Paid</span><span style="font-weight:800;color:#059669;">${formatCurrency(invoice.paidAmount)}</span></div>
+              <div class="row"><span style="font-weight:700;color:#dc2626;">Balance</span><span style="font-weight:800;color:#dc2626;">${formatCurrency(balance)}</span></div>
+            </div>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  const handleDownloadInvoice = (invoice) => {
+    const html = buildInvoiceHtml(invoice);
+    const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `${invoice.invoiceNo}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    showMessage('Invoice downloaded!', 'success');
+  };
 
   const homeworkStats = useMemo(() => {
     if (!linkedChild) return { submitted: [], pending: [] };
@@ -145,16 +284,14 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
   }, [attendanceRecords]);
 
   const feeSummary = useMemo(() => {
-    const totalFee = Number(feeDetails?.feeAmount || 0);
-    const paidAmount = feePayments
-      .filter((payment) => payment.status === 'paid')
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-    const inProcessAmount = feePayments
-      .filter((payment) => payment.status === 'pending' || payment.status === 'processing')
-      .reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+    if (feePayments.length === 0) return { totalFee: 0, paidAmount: 0, inProcessAmount: 0, pendingAmount: 0 };
+    
+    const totalFee = feePayments.reduce((sum, inv) => sum + (parseFloat(inv.totalFee) || 0), 0);
+    const paidAmount = feePayments.reduce((sum, inv) => sum + (parseFloat(inv.paidAmount) || 0), 0);
     const pendingAmount = Math.max(totalFee - paidAmount, 0);
-    return { totalFee, paidAmount, inProcessAmount, pendingAmount };
-  }, [feeDetails, feePayments]);
+    
+    return { totalFee, paidAmount, inProcessAmount: 0, pendingAmount };
+  }, [feePayments]);
 
   // Transport: find this child's passenger record id
   const childTransportPassengerIds = useMemo(() => {
@@ -224,19 +361,6 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
     }
   };
 
-  if (!linkedChild) {
-    return (
-      <div className='mx-auto max-w-5xl p-6'>
-        <div className='rounded-2xl border border-amber-200 bg-amber-50 p-8 text-center shadow-sm'>
-          <h2 className='text-2xl font-bold text-amber-900'>Parent Dashboard</h2>
-          <p className='mt-3 text-amber-800'>
-            No child is linked to this parent account yet. Ask admin or superadmin to link your child profile first.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className={`flex h-screen overflow-hidden ${isDarkMode ? 'bg-gray-900 text-white' : 'bg-gray-50 text-gray-800'}`}>
       <aside className={`w-80 flex-shrink-0 border-r shadow-lg z-40 flex flex-col h-screen sticky top-0 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'}`}>
@@ -264,14 +388,35 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
           )}
 
           <h3 className={`text-xl font-bold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{user.name}</h3>
-          <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>Monitoring: {linkedChild.name}</p>
-          <p className={`text-xs ${isDarkMode ? 'text-gray-500' : 'text-slate-500'}`}>
-            Class {linkedChild.className || 'N/A'} | Section {linkedChild.section || linkedChild.sec || 'N/A'}
-          </p>
+          
+          <div className="mt-4 space-y-3">
+            <p className={`text-[10px] font-black uppercase tracking-widest ${isDarkMode ? 'text-gray-500' : 'text-slate-400'}`}>Children Linked</p>
+            {user.kids && user.kids.length > 0 ? (
+              user.kids.map((kid, idx) => {
+                const actualStudent = students.find(s => normalize(s.name) === normalize(kid.name) && normalize(s.className) === normalize(kid.currentClass));
+                return (
+                  <div key={idx} className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-800/50 border-gray-700' : 'bg-slate-50 border-slate-100'}`}>
+                    <p className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{kid.name}</p>
+                    <p className={`text-[10px] font-bold ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>
+                      Class {kid.currentClass} | Sec {actualStudent?.section || actualStudent?.sec || 'N/A'}
+                    </p>
+                  </div>
+                );
+              })
+            ) : (
+              <div className={`p-3 rounded-xl border border-dashed ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}`}>
+                <p className="text-[10px] text-slate-400 italic">Add children in profile to see details</p>
+              </div>
+            )}
+          </div>
+
           {user?.schoolName && (
-            <p className={`text-xs font-semibold mt-2 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>🏫 {user.schoolName}</p>
+            <div className="mt-4 pt-4 border-t border-dashed border-slate-200">
+              <p className={`text-xs font-black ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>🏫 {user.schoolName}</p>
+              <p className={`text-[10px] font-bold mt-1 ${isDarkMode ? 'text-gray-400' : 'text-slate-500'}`}>📚 Board: {user?.board || 'N/A'}</p>
+            </div>
           )}
-          <p className={`text-xs font-semibold mt-1 ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>📚 Board: {user?.board || 'N/A'}</p>
+
 
           {/* Theme Toggle */}
           <button
@@ -358,9 +503,9 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
                 <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
                   <h3 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Child Snapshot</h3>
                   <div className={`mt-4 space-y-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
-                    <p><span className='font-semibold'>Student:</span> {linkedChild.name}</p>
-                    <p><span className='font-semibold'>Class:</span> {linkedChild.className || 'N/A'}</p>
-                    <p><span className='font-semibold'>Section:</span> {linkedChild.section || linkedChild.sec || 'N/A'}</p>
+                    <p><span className='font-semibold'>Student:</span> {linkedChild?.name || 'N/A'}</p>
+                    <p><span className='font-semibold'>Class:</span> {linkedChild?.className || 'N/A'}</p>
+                    <p><span className='font-semibold'>Section:</span> {linkedChild?.section || linkedChild?.sec || 'N/A'}</p>
                     <p><span className='font-semibold'>Homework Submitted:</span> {homeworkStats.submitted.length}</p>
                     <p><span className='font-semibold'>Homework Pending:</span> {homeworkStats.pending.length}</p>
                     <p><span className='font-semibold'>Materials Read:</span> {materialsStats.read.length}</p>
@@ -539,88 +684,161 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
           )}
 
           {activeTab === 'fees' && (
-            <div className='space-y-6'>
-              <div className='grid gap-6 md:grid-cols-2 lg:grid-cols-4'>
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer" title='Total Fee' icon='T' value={`Rs. ${feeSummary.totalFee}`} color='blue' />
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer" title='Paid' icon='P' value={`Rs. ${feeSummary.paidAmount}`} color='green' />
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer" title='In Process' icon='I' value={`Rs. ${feeSummary.inProcessAmount}`} color='orange' />
-                <DashboardCard onClick={() => setActiveTab('fees')} className="cursor-pointer" title='Pending' icon='B' value={`Rs. ${feeSummary.pendingAmount}`} color='red' />
+            <div className='space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500'>
+              {/* Premium Summary Cards */}
+              <div className='grid gap-4 md:grid-cols-4'>
+                {[
+                  { label: 'Total Payable', val: formatCurrency(feeSummary.totalFee), icon: '💰', color: 'from-blue-600 to-indigo-600' },
+                  { label: 'Total Paid', val: formatCurrency(feeSummary.paidAmount), icon: '✅', color: 'from-emerald-500 to-teal-600' },
+                  { label: 'Pending', val: formatCurrency(feeSummary.pendingAmount), icon: '⏳', color: 'from-rose-500 to-red-600' },
+                  { label: 'Plan Status', val: feePayments[0]?.paymentPlan?.replace('_',' ') || 'Not Set', icon: '📅', color: 'from-amber-500 to-orange-600' },
+                ].map((card, i) => (
+                  <div key={i} className={`relative overflow-hidden rounded-2xl p-6 text-white shadow-xl bg-gradient-to-br ${card.color}`}>
+                    <div className="absolute -right-4 -top-4 text-6xl opacity-20">{card.icon}</div>
+                    <p className='text-xs font-bold uppercase tracking-wider opacity-80'>{card.label}</p>
+                    <p className='mt-2 text-2xl font-black'>{card.val}</p>
+                  </div>
+                ))}
               </div>
 
-              <div className='grid gap-6 lg:grid-cols-2'>
-                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
-                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fee Summary</h2>
-                  <div className={`mt-4 space-y-2 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
-                    <p><span className='font-semibold'>Student:</span> {linkedChild.name}</p>
-                    <p><span className='font-semibold'>Class:</span> {linkedChild.className || 'N/A'}</p>
-                    <p><span className='font-semibold'>Total annual fee:</span> Rs. {feeSummary.totalFee}</p>
-                    <p><span className='font-semibold'>Paid amount:</span> Rs. {feeSummary.paidAmount}</p>
-                    <p><span className='font-semibold'>Amount in process:</span> Rs. {feeSummary.inProcessAmount}</p>
-                    <p><span className='font-semibold'>Current pending:</span> Rs. {feeSummary.pendingAmount}</p>
-                    <p><span className='font-semibold'>Fee note:</span> {feeDetails?.description || 'No fee description set by school yet.'}</p>
-                  </div>
-                </div>
-
-                <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
-                  <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Payment Mode</h2>
-                  <p className='mt-1 text-sm text-slate-600'>
-                    Parents can view fee payment status here, but cannot submit fee from the application.
-                  </p>
-                  <div className={`mt-4 space-y-3 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>
-                    <p><span className='font-semibold'>Selected mode:</span> {latestPaymentMode}</p>
-                    <p><span className='font-semibold'>Cycle:</span> {latestPayment?.note || 'School will update whether it is monthly, semester, installment (3/4/6 months), or one-time.'}</p>
-                    <p><span className='font-semibold'>Current status:</span> {latestPayment?.status || 'Pending update from school office'}</p>
-                    <p><span className='font-semibold'>Payment instruction:</span> Please contact school office or follow school notice for the actual payment process.</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
-                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Fee Notices</h2>
-                <div className='mt-4 space-y-3'>
-                  {feeNotices.length === 0 ? (
-                    <p className='text-slate-500'>No fee-related notices available right now.</p>
-                  ) : (
-                    feeNotices.map((notice) => (
-                      <div key={notice.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
-                        <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{notice.title}</p>
-                        <p className={`mt-1 text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>{notice.message}</p>
-                        <p className='mt-2 text-xs text-slate-500'>
-                          From {notice.senderName} ({notice.senderRole}) on {new Date(notice.sentAt).toLocaleDateString()}
+              <div className='grid gap-6 lg:grid-cols-3'>
+                {/* Account Info */}
+                <div className={`lg:col-span-1 space-y-6`}>
+                  <div className={`rounded-[2rem] border shadow-lg overflow-hidden ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+                    <div className="bg-gradient-to-r from-slate-800 to-slate-900 p-6">
+                      <h2 className="text-lg font-black text-white">Billing Info</h2>
+                      <p className="text-xs text-slate-400 mt-1">Details for {linkedChild?.name || 'N/A'}</p>
+                    </div>
+                    <div className="p-6 space-y-4">
+                      <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                        <span className="text-sm font-bold text-slate-500">Student ID</span>
+                        <span className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{linkedChild?.id?.toString().slice(-6) || 'N/A'}</span>
+                      </div>
+                      <div className="flex justify-between items-center py-2 border-b border-dashed border-slate-200">
+                        <span className="text-sm font-bold text-slate-500">Class & Sec</span>
+                        <span className={`text-sm font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{linkedChild?.className || 'N/A'} - {linkedChild?.section || linkedChild?.sec || 'N/A'}</span>
+                      </div>
+                      <div className="pt-2">
+                        <p className="text-xs font-bold text-slate-400 uppercase mb-2">School Note</p>
+                        <p className={`text-sm italic ${isDarkMode ? 'text-gray-400' : 'text-slate-600'}`}>
+                          {feeDetails?.description || 'No specific fee instructions provided by the school administration.'}
                         </p>
                       </div>
-                    ))
-                  )}
-                </div>
-              </div>
+                    </div>
+                  </div>
 
-              <div className={`rounded-xl border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} bg-white p-6 shadow-sm`}>
-                <h2 className={`text-lg font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Payment History</h2>
-                <div className='mt-4 space-y-3'>
-                  {feePayments.length === 0 ? (
-                    <p className='text-slate-500'>No payment status has been updated by school yet.</p>
-                  ) : (
-                    feePayments.map((payment) => (
-                      <div key={payment.id} className={`rounded-lg border ${isDarkMode ? 'border-gray-700' : 'border-slate-200'} p-4`}>
-                        <div className='flex flex-wrap items-start justify-between gap-3'>
-                          <div>
-                            <p className={`font-semibold ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Rs. {payment.amount}</p>
-                            <p className={`text-sm ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Plan: {payment.plan.replace('_', ' ')}</p>
-                            <p className='text-xs text-slate-500'>
-                              Requested on {new Date(payment.requestedAt).toLocaleDateString()}
-                            </p>
-                            {payment.note && <p className='mt-1 text-sm text-slate-600'>{payment.note}</p>}
+                   <div className={`rounded-[2rem] border shadow-lg p-6 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+                    <h3 className={`text-sm font-black uppercase tracking-widest mb-4 ${isDarkMode ? 'text-amber-400' : 'text-amber-600'}`}>Payment Instructions</h3>
+                    <div className="space-y-3">
+                      <div className="flex gap-3">
+                        <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold flex-shrink-0">1</div>
+                        <p className="text-xs text-slate-500 leading-relaxed">Review the pending invoices list below.</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold flex-shrink-0">2</div>
+                        <p className="text-xs text-slate-500 leading-relaxed">Click 'Pay Now' for the respective installment.</p>
+                      </div>
+                      <div className="flex gap-3">
+                        <div className="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xs font-bold flex-shrink-0">3</div>
+                        <p className="text-xs text-slate-500 leading-relaxed">Download the generated receipt for your records.</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className={`rounded-[2rem] border shadow-lg p-6 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+                    <h3 className={`text-sm font-black uppercase tracking-widest mb-4 ${isDarkMode ? 'text-blue-400' : 'text-blue-600'}`}>Fee Notices</h3>
+                    <div className="space-y-4">
+                      {feeNotices.length === 0 ? (
+                        <p className="text-xs text-slate-400 italic">No active notices.</p>
+                      ) : (
+                        feeNotices.map((notice) => (
+                          <div key={notice.id} className={`p-3 rounded-xl border ${isDarkMode ? 'bg-gray-750 border-gray-700' : 'bg-slate-50 border-slate-100'}`}>
+                            <p className="text-[10px] font-black uppercase text-slate-400 mb-1">{new Date(notice.sentAt).toLocaleDateString()}</p>
+                            <p className={`text-xs font-bold ${isDarkMode ? 'text-gray-200' : 'text-slate-800'}`}>{notice.title}</p>
+                            <p className={`text-[10px] ${isDarkMode ? 'text-gray-400' : 'text-slate-500'} mt-1 leading-relaxed`}>{notice.message}</p>
                           </div>
-                          <span className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            payment.status === 'paid'
-                              ? 'bg-green-100 text-green-700'
-                              : payment.status === 'processing'
-                                ? 'bg-blue-100 text-blue-700'
-                                : 'bg-yellow-100 text-yellow-700'
-                          }`}>
-                            {payment.status}
-                          </span>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoices List */}
+                <div className="lg:col-span-2 space-y-4">
+                  <div className="flex items-center justify-between mb-2">
+                    <h2 className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Transaction Ledger</h2>
+                    <span className="text-xs font-bold text-slate-400">{feePayments.length} Items</span>
+                  </div>
+
+                  {feePayments.length === 0 ? (
+                    <div className={`rounded-[2rem] border border-dashed p-12 text-center ${isDarkMode ? 'border-gray-700' : 'border-slate-200'}`}>
+                      <div className="text-4xl mb-4">🧾</div>
+                      <p className="text-slate-500 font-bold">No invoices found for this student.</p>
+                      <p className="text-xs text-slate-400 mt-2">School office will generate invoices as per the schedule.</p>
+                    </div>
+                  ) : (
+                    feePayments.map((inv) => (
+                      <div key={inv.id} className={`group rounded-[1.5rem] border p-6 transition-all hover:shadow-xl ${isDarkMode ? 'bg-gray-800 border-gray-700 hover:bg-gray-750' : 'bg-white border-slate-100 hover:border-emerald-200'}`}>
+                        <div className="flex flex-wrap items-center justify-between gap-4">
+                          <div className="flex items-center gap-4">
+                            <div className={`w-12 h-12 rounded-xl flex items-center justify-center text-xl shadow-inner ${
+                              inv.status === 'paid' ? 'bg-emerald-100 text-emerald-600' : 'bg-rose-100 text-rose-600'
+                            }`}>
+                              {inv.status === 'paid' ? '✓' : '!'}
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h4 className={`font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{inv.invoiceNo}</h4>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black uppercase ${
+                                  inv.status === 'paid' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'
+                                }`}>
+                                  {inv.status}
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-slate-500 mt-0.5">{inv.installmentLabel || 'One-time Fee'}</p>
+                            </div>
+                          </div>
+
+                          <div className="text-right">
+                            <p className={`text-xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>{formatCurrency(inv.totalFee)}</p>
+                            <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">
+                              Due: {new Date(inv.dueDate).toLocaleDateString()}
+                            </p>
+                            <div className="w-full md:w-auto flex items-center gap-2 pt-4 md:pt-0 border-t md:border-0 border-slate-100">
+                            {inv.status === 'unpaid' || inv.status === 'partial' ? (
+                              <button 
+                                onClick={() => handlePayInvoice(inv)}
+                                className="flex-1 md:flex-none px-6 py-2.5 bg-emerald-600 text-white rounded-xl text-xs font-black hover:bg-emerald-700 shadow-lg shadow-emerald-600/20 transition-all active:scale-95"
+                              >
+                                {inv.status === 'partial' ? 'Pay Balance' : 'Pay Now'}
+                              </button>
+                            ) : inv.status === 'processing' ? (
+                              <span className="px-4 py-2 bg-amber-100 text-amber-700 rounded-xl text-[10px] font-black uppercase">
+                                Under Review
+                              </span>
+                            ) : null}
+                            <button 
+                              onClick={() => handleDownloadInvoice(inv)}
+                              className={`flex-1 md:flex-none px-6 py-2.5 rounded-xl text-xs font-black border transition-all ${
+                                isDarkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-slate-200 text-slate-700 hover:bg-slate-50'
+                              }`}
+                            >
+                              Download
+                            </button>
+                          </div>
                         </div>
+                        {inv.paidAmount > 0 && (
+                          <div className="mt-4 pt-4 border-t border-dashed border-slate-200 flex justify-between items-center">
+                            <span className="text-xs font-bold text-slate-400">Total amount paid:</span>
+                            <span className="text-xs font-black text-emerald-600">{formatCurrency(inv.paidAmount)}</span>
+                          </div>
+                        )}
+                        {inv.paymentProof && (
+                          <div className="mt-3 p-3 rounded-xl bg-amber-50 border border-amber-100 flex items-center justify-between">
+                             <span className="text-[10px] font-bold text-amber-700">Proof submitted for {formatCurrency(inv.paymentProof.amount)}</span>
+                             <span className="text-[9px] text-amber-500">{new Date(inv.paymentProof.submittedAt).toLocaleString()}</span>
+                          </div>
+                        )}
                       </div>
                     ))
                   )}
@@ -629,6 +847,70 @@ export default function ParentDashboard({ user, allUsers, showMessage, loadData 
             </div>
           )}
         </div>
+
+        {/* Payment Modal */}
+        {isPaymentModalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+            <div className={`w-full max-w-md rounded-[2rem] shadow-2xl overflow-hidden ${isDarkMode ? 'bg-gray-800 border border-gray-700' : 'bg-white'}`}>
+              <div className="p-8">
+                <div className="flex justify-between items-start mb-6">
+                  <div>
+                    <h3 className={`text-2xl font-black ${isDarkMode ? 'text-white' : 'text-slate-900'}`}>Confirm Payment</h3>
+                    <p className="text-sm text-slate-500 font-bold mt-1">Invoice: {selectedInvoice?.invoiceNo}</p>
+                  </div>
+                  <button onClick={() => setIsPaymentModalOpen(false)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">✕</button>
+                </div>
+
+                <div className="space-y-6">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Amount to Pay</label>
+                    <div className="relative">
+                       <span className="absolute left-4 top-1/2 -translate-y-1/2 font-black text-slate-400">Rs.</span>
+                       <input 
+                         type="number" 
+                         value={paymentAmount}
+                         onChange={e => setPaymentAmount(e.target.value)}
+                         className={`w-full pl-12 pr-4 py-4 rounded-2xl font-black text-xl border focus:ring-4 focus:ring-emerald-500/20 transition-all ${
+                           isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-slate-50 border-slate-100'
+                         }`}
+                       />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 mb-2 tracking-widest">Upload Payment Screenshot (Mandatory)</label>
+                    <label className={`block w-full border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition-all hover:border-emerald-500 ${
+                      paymentScreenshot ? 'border-emerald-500 bg-emerald-50/10' : (isDarkMode ? 'border-gray-600 hover:bg-gray-700' : 'border-slate-200 hover:bg-slate-50')
+                    }`}>
+                      <input type="file" accept="image/*" onChange={handleScreenshotChange} className="hidden" />
+                      {paymentScreenshot ? (
+                        <div className="relative">
+                           <img src={paymentScreenshot} className="h-32 mx-auto rounded-xl shadow-lg" alt="Proof" />
+                           <div className="mt-2 text-xs font-black text-emerald-600">✓ Screenshot Added</div>
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          <div className="text-3xl">📸</div>
+                          <p className="text-xs font-bold text-slate-500">Tap to upload proof</p>
+                        </div>
+                      )}
+                    </label>
+                  </div>
+
+                  <button 
+                    onClick={submitPaymentProof}
+                    className="w-full py-4 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-600/30 hover:bg-emerald-700 active:scale-[0.98] transition-all"
+                  >
+                    Submit Proof
+                  </button>
+                  <p className="text-[10px] text-center text-slate-400 font-bold px-6">
+                    By submitting, you confirm that the payment has been made. School staff will verify the screenshot before updating your official record.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );

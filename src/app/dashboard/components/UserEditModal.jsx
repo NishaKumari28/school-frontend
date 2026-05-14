@@ -30,7 +30,9 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
     childClass: '',
     childSection: '',
     relationWithChild: '',
-    designation: ''
+    designation: '',
+    howManyKids: 1,
+    kids: [{ name: '', currentClass: '', admissionClass: '' }]
   });
 
   useEffect(() => {
@@ -56,7 +58,9 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
         childClass: user.childClass || '',
         childSection: user.childSection || '',
         relationWithChild: user.relationWithChild || '',
-        designation: user.designation || ''
+        designation: user.designation || '',
+        howManyKids: user.kids ? user.kids.length : 1,
+        kids: user.kids || [{ name: '', currentClass: '', admissionClass: '' }]
       });
       setSchoolSearch(user.schoolName || '');
     }
@@ -258,8 +262,8 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
                   />
                   {showSchoolDropdown && (
                     <div className={`absolute z-10 w-full mt-1 max-h-40 overflow-y-auto border rounded-md shadow-lg ${isDarkMode ? 'bg-gray-700 border-gray-600' : 'bg-white border-gray-300'}`}>
-                      {availableSchools
-                        .filter(school => school.toLowerCase().includes(schoolSearch.toLowerCase()))
+                      {(availableSchools || [])
+                        .filter(school => (school || '').toLowerCase().includes((schoolSearch || '').toLowerCase()))
                         .map(school => (
                           <div
                             key={school}
@@ -273,7 +277,7 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
                             {school}
                           </div>
                         ))}
-                      {availableSchools.filter(school => school.toLowerCase().includes(schoolSearch.toLowerCase())).length === 0 && (
+                      {(availableSchools || []).filter(school => (school || '').toLowerCase().includes((schoolSearch || '').toLowerCase())).length === 0 && (
                         <div className={`px-3 py-2 text-sm ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>No schools found</div>
                       )}
                     </div>
@@ -443,25 +447,76 @@ export default function UserEditModal({ isOpen, user, onClose, onSave, isAdminMo
             {/* PARENT FIELDS */}
             {!isAdminMode && formData.role === 'parents' && (
               <>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Child Name</label>
-                  <input type="text" value={formData.childName} onChange={(e) => handleChange('childName', e.target.value)} className={`w-full px-3 py-2 border rounded-md ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`} />
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Child Class</label>
-                  <input type="text" value={formData.childClass} onChange={(e) => handleChange('childClass', e.target.value)} className={`w-full px-3 py-2 border rounded-md ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`} />
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Child Section</label>
-                  <input type="text" value={formData.childSection} onChange={(e) => handleChange('childSection', e.target.value)} className={`w-full px-3 py-2 border rounded-md ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`} />
-                </div>
-                <div>
-                  <label className={`block text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Relation with Child</label>
+                <div className="md:col-span-2">
+                  <label className={`block text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Relation with Kid(s)</label>
                   <input type="text" value={formData.relationWithChild} onChange={(e) => handleChange('relationWithChild', e.target.value)} className={`w-full px-3 py-2 border rounded-md ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`} />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className={`block text-sm font-medium mb-1 ${isDarkMode ? 'text-gray-300' : 'text-slate-700'}`}>Address</label>
                   <input type="text" value={formData.address} onChange={(e) => handleChange('address', e.target.value)} className={`w-full px-3 py-2 border rounded-md ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-slate-300'}`} />
+                </div>
+                <div className="md:col-span-2 mt-4">
+                  <h3 className={`text-sm font-bold mb-3 ${isDarkMode ? 'text-blue-400' : 'text-blue-800'}`}>Kids Details</h3>
+                  <div className="space-y-4">
+                    {formData.kids && formData.kids.map((kid, index) => (
+                      <div key={index} className={`p-4 border rounded-md grid gap-3 md:grid-cols-3 relative ${isDarkMode ? 'bg-gray-700/50 border-gray-600' : 'bg-gray-50 border-gray-200'}`}>
+                         {formData.kids.length > 1 && (
+                            <button 
+                              type="button" 
+                              onClick={() => {
+                                const newKids = formData.kids.filter((_, i) => i !== index);
+                                handleChange('kids', newKids);
+                              }}
+                              className="absolute top-2 right-2 text-red-500 hover:text-red-700 text-xs font-bold"
+                            >
+                              ✕ Remove
+                            </button>
+                         )}
+                         <div>
+                            <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Kid {index + 1} Name</label>
+                            <input 
+                              placeholder="Name" 
+                              value={kid.name} 
+                              onChange={e => {
+                                const newKids = [...formData.kids];
+                                newKids[index].name = e.target.value;
+                                handleChange('kids', newKids);
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-md text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 bg-white'}`} 
+                            />
+                         </div>
+                         <div>
+                            <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Current Class</label>
+                            <input 
+                              placeholder="Class" 
+                              value={kid.currentClass} 
+                              onChange={e => {
+                                const newKids = [...formData.kids];
+                                newKids[index].currentClass = e.target.value;
+                                handleChange('kids', newKids);
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-md text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 bg-white'}`} 
+                            />
+                         </div>
+                         <div>
+                            <label className={`text-xs mb-1 block ${isDarkMode ? 'text-gray-400' : 'text-gray-500'}`}>Admission Class</label>
+                            <input 
+                              placeholder="Admission Class" 
+                              value={kid.admissionClass} 
+                              onChange={e => {
+                                const newKids = [...formData.kids];
+                                newKids[index].admissionClass = e.target.value;
+                                handleChange('kids', newKids);
+                              }} 
+                              className={`w-full px-3 py-2 border rounded-md text-sm ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'border-gray-300 bg-white'}`} 
+                            />
+                         </div>
+                      </div>
+                    ))}
+                    <button type="button" onClick={() => handleChange('kids', [...(formData.kids || []), { name: '', currentClass: '', admissionClass: '' }])} className={`text-sm font-medium ${isDarkMode ? 'text-blue-400 hover:text-blue-300' : 'text-blue-600 hover:text-blue-800'}`}>
+                      + Add Another Kid
+                    </button>
+                  </div>
                 </div>
               </>
             )}

@@ -3,6 +3,119 @@ import { useState, useMemo, useRef } from 'react';
 import { libraryUtils, generateId } from '../utils/staffDataUtils';
 import Papa from 'papaparse';
 
+function SearchableSelect({ options, value, onChange, placeholder, isDarkMode }) {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const filteredOptions = options.filter(o => o.searchStr.toLowerCase().includes(query.toLowerCase()));
+  const selectedOption = options.find(o => o.value === value);
+
+  return (
+    <div className="relative w-full">
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full px-4 py-3 rounded-2xl border text-left cursor-pointer flex justify-between items-center text-xs font-bold transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white'}`}
+      >
+        <span>{selectedOption ? selectedOption.label : placeholder}</span>
+        <span className="text-[10px] text-slate-400">▼</span>
+      </div>
+      
+      {isOpen && (
+        <div className={`absolute z-[110] w-full mt-2 rounded-2xl border shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+          <div className="p-3 border-b dark:border-gray-700">
+            <input 
+              autoFocus
+              type="text" 
+              placeholder="Search..." 
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold border transition-all outline-none focus:ring-2 focus:ring-blue-500/20 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-blue-400'}`}
+            />
+          </div>
+          <div className="overflow-y-auto max-h-48 p-1.5 custom-scrollbar">
+            {filteredOptions.length === 0 ? (
+              <div className="p-4 text-xs font-bold text-center text-slate-400">No results found</div>
+            ) : (
+              filteredOptions.map(opt => (
+                <div 
+                  key={opt.value} 
+                  onClick={() => { onChange(opt.value); setIsOpen(false); setQuery(''); }}
+                  className={`px-4 py-3 text-xs font-bold rounded-xl cursor-pointer transition-all ${value === opt.value ? 'bg-blue-600 text-white shadow-md' : isDarkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-blue-50 hover:text-blue-700 text-slate-600'}`}
+                >
+                  {opt.label}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      )}
+      {isOpen && <div className="fixed inset-0 z-[105]" onClick={() => setIsOpen(false)}></div>}
+    </div>
+  );
+}
+
+function SearchableMultiSelect({ options, selectedValues, onChange, placeholder, isDarkMode }) {
+  const [query, setQuery] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  
+  const filteredOptions = options.filter(o => o.searchStr.toLowerCase().includes(query.toLowerCase()));
+
+  const toggleOption = (val) => {
+    if (selectedValues.includes(val)) {
+      onChange(selectedValues.filter(v => v !== val));
+    } else {
+      onChange([...selectedValues, val]);
+    }
+  };
+
+  return (
+    <div className="relative w-full">
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className={`w-full px-4 py-3 rounded-2xl border text-left cursor-pointer flex justify-between items-center text-xs font-bold transition-all ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white'}`}
+      >
+        <span className="truncate pr-4">{selectedValues.length > 0 ? `${selectedValues.length} selected` : placeholder}</span>
+        <span className="text-[10px] text-slate-400">▼</span>
+      </div>
+      
+      {isOpen && (
+        <div className={`absolute z-[110] w-full mt-2 rounded-2xl border shadow-2xl flex flex-col overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200 ${isDarkMode ? 'bg-gray-800 border-gray-700' : 'bg-white border-slate-100'}`}>
+          <div className="p-3 border-b dark:border-gray-700">
+            <input 
+              autoFocus
+              type="text" 
+              placeholder="Search..." 
+              value={query}
+              onChange={e => setQuery(e.target.value)}
+              className={`w-full px-4 py-2.5 rounded-xl text-xs font-bold border transition-all outline-none focus:ring-2 focus:ring-blue-500/20 ${isDarkMode ? 'bg-gray-700 border-gray-600 text-white' : 'bg-slate-50 border-slate-200 text-slate-800 focus:bg-white focus:border-blue-400'}`}
+            />
+          </div>
+          <div className="overflow-y-auto max-h-48 p-1.5 custom-scrollbar">
+            {filteredOptions.length === 0 ? (
+              <div className="p-4 text-xs font-bold text-center text-slate-400">No results found</div>
+            ) : (
+              filteredOptions.map(opt => {
+                const isSelected = selectedValues.includes(opt.value);
+                return (
+                  <div 
+                    key={opt.value} 
+                    onClick={(e) => { e.stopPropagation(); toggleOption(opt.value); }}
+                    className={`px-4 py-3 text-xs font-bold rounded-xl cursor-pointer transition-all flex items-center justify-between ${isSelected ? 'bg-blue-50 text-blue-700 border border-blue-200 shadow-sm dark:bg-blue-900/30 dark:border-blue-800/50 dark:text-blue-300' : isDarkMode ? 'hover:bg-gray-700 text-gray-200' : 'hover:bg-slate-50 hover:text-slate-700 text-slate-600'}`}
+                  >
+                    <span>{opt.label}</span>
+                    {isSelected && <span className="text-blue-600 dark:text-blue-400">✓</span>}
+                  </div>
+                );
+              })
+            )}
+          </div>
+        </div>
+      )}
+      {isOpen && <div className="fixed inset-0 z-[105]" onClick={() => setIsOpen(false)}></div>}
+    </div>
+  );
+}
+
 export default function StaffLibrary({ isDarkMode, showMessage, students = [], teachers = [], staffClassOptions = [] }) {
   const [activeSubTab, setActiveSubTab] = useState('inventory');
   const [refreshKey, setRefreshKey] = useState(0);
@@ -10,6 +123,8 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
   const [readingSearch, setReadingSearch] = useState({ query: '', date: '' });
   const [studentSearch, setStudentSearch] = useState({ query: '', date: '' });
   const [teacherSearch, setTeacherSearch] = useState({ query: '', date: '' });
+  const [readingStudentSearch, setReadingStudentSearch] = useState('');
+  const [lendingStudentSearch, setLendingStudentSearch] = useState('');
   
   // Modal States
   const [showBookModal, setShowBookModal] = useState(false);
@@ -24,9 +139,9 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
 
   // Form States
   const [bookForm, setBookForm] = useState({ title: '', author: '', subject: 'Science', class: '10th', isbn: '', stock: 1 });
-  const [readingForm, setReadingForm] = useState({ studentName: '', class: '', sec: '', bookId: '', bookSubject: '' });
-  const [studentLendingForm, setStudentLendingForm] = useState({ studentName: '', class: '', sec: '', bookName: '', bookId: '', expectedReturnDate: '' });
-  const [teacherLendingForm, setTeacherLendingForm] = useState({ teacherName: '', teacherSubject: '', bookSubject: '', bookId: '', expectedReturnDate: '' });
+  const [readingForm, setReadingForm] = useState({ studentId: '', selectedBooks: [] });
+  const [studentLendingForm, setStudentLendingForm] = useState({ studentId: '', selectedBooks: [], expectedReturnDate: '' });
+  const [teacherLendingForm, setTeacherLendingForm] = useState({ teacherId: '', selectedBooks: [], expectedReturnDate: '' });
 
   const fileInputAddRef = useRef(null);
   const fileInputRemoveRef = useRef(null);
@@ -44,6 +159,25 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
     b.class.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
+  // Options for custom selects
+  const studentOptions = useMemo(() => students.map(s => ({
+    value: s.id,
+    label: `${s.name} (Class ${s.class} - Sec ${s.section || s.sec || ''})`,
+    searchStr: `${s.name} ${s.class} ${s.section || s.sec || ''}`
+  })), [students]);
+
+  const teacherOptions = useMemo(() => teachers.map(t => ({
+    value: t.id,
+    label: `${t.name} (${t.subject})`,
+    searchStr: `${t.name} ${t.subject}`
+  })), [teachers]);
+
+  const bookOptions = useMemo(() => books.filter(b => b.stock > 0).map(b => ({
+    value: b.id,
+    label: `${b.title} (Available: ${b.stock})`,
+    searchStr: `${b.title} ${b.isbn} ${b.subject}`
+  })), [books]);
+
   // Handlers
   const handleSaveBook = (e) => {
     e.preventDefault();
@@ -55,26 +189,75 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
 
   const handleReadingSession = (e) => {
     e.preventDefault();
-    libraryUtils.addReadingLog(readingForm);
+    if (!readingForm.studentId || readingForm.selectedBooks.length === 0) {
+      showMessage('Please select a student and at least one book', 'error');
+      return;
+    }
+    const student = students.find(s => s.id === readingForm.studentId);
+    readingForm.selectedBooks.forEach(bookId => {
+      const book = books.find(b => b.id === bookId);
+      if (book) {
+        libraryUtils.addReadingLog({
+          studentName: student?.name || '',
+          class: student?.class || '',
+          sec: student?.section || student?.sec || '',
+          bookId: book.isbn || book.id,
+          bookSubject: book.subject || 'General'
+        });
+      }
+    });
     setShowReadingModal(false);
     setRefreshKey(k => k + 1);
-    showMessage('Reading session started', 'success');
+    showMessage(`Reading session started for ${readingForm.selectedBooks.length} book(s)`, 'success');
   };
 
   const handleStudentLending = (e) => {
     e.preventDefault();
-    libraryUtils.issueStudentBook(studentLendingForm);
+    if (!studentLendingForm.studentId || studentLendingForm.selectedBooks.length === 0) {
+      showMessage('Please select a student and at least one book', 'error');
+      return;
+    }
+    const student = students.find(s => s.id === studentLendingForm.studentId);
+    studentLendingForm.selectedBooks.forEach(bookId => {
+      const book = books.find(b => b.id === bookId);
+      if (book) {
+        libraryUtils.issueStudentBook({
+          studentName: student?.name || '',
+          class: student?.class || '',
+          sec: student?.section || student?.sec || '',
+          bookName: book.title,
+          bookId: book.isbn || book.id,
+          expectedReturnDate: studentLendingForm.expectedReturnDate
+        });
+      }
+    });
     setShowStudentLendingModal(false);
     setRefreshKey(k => k + 1);
-    showMessage('Book issued to student', 'success');
+    showMessage(`${studentLendingForm.selectedBooks.length} book(s) issued to student`, 'success');
   };
 
   const handleTeacherLending = (e) => {
     e.preventDefault();
-    libraryUtils.issueTeacherBook(teacherLendingForm);
+    if (!teacherLendingForm.teacherId || teacherLendingForm.selectedBooks.length === 0) {
+      showMessage('Please select a teacher and at least one book', 'error');
+      return;
+    }
+    const teacher = teachers.find(t => t.id === teacherLendingForm.teacherId);
+    teacherLendingForm.selectedBooks.forEach(bookId => {
+      const book = books.find(b => b.id === bookId);
+      if (book) {
+        libraryUtils.issueTeacherBook({
+          teacherName: teacher?.name || '',
+          teacherSubject: teacher?.subject || '',
+          bookSubject: book.subject || 'General',
+          bookId: book.isbn || book.id,
+          expectedReturnDate: teacherLendingForm.expectedReturnDate
+        });
+      }
+    });
     setShowTeacherLendingModal(false);
     setRefreshKey(k => k + 1);
-    showMessage('Book issued to teacher', 'success');
+    showMessage(`${teacherLendingForm.selectedBooks.length} book(s) issued to teacher`, 'success');
   };
 
   const downloadSampleAdd = () => {
@@ -580,27 +763,24 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
              <h3 className="text-2xl font-black mb-6">Reading Room Entry</h3>
              <form onSubmit={handleReadingSession} className="space-y-4">
                 <div className="space-y-1">
-                   <label className="text-[10px] font-bold uppercase text-slate-500">Select Student</label>
-                   <select required onChange={e => {
-                      const s = students.find(x => x.name === e.target.value);
-                      setReadingForm({...readingForm, studentName: e.target.value, class: s?.class || '', sec: s?.section || ''});
-                   }} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}>
-                      <option value="">-- Choose Student --</option>
-                      {students.map(s => <option key={s.id} value={s.name}>{s.name} (Class {s.class})</option>)}
-                   </select>
+                   <label className="text-[10px] font-bold uppercase text-slate-500">Student</label>
+                   <SearchableSelect 
+                     options={studentOptions} 
+                     value={readingForm.studentId} 
+                     onChange={(val) => setReadingForm({...readingForm, studentId: val})} 
+                     placeholder="-- Choose Student --" 
+                     isDarkMode={isDarkMode} 
+                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-slate-500">Book ID</label>
-                      <input required value={readingForm.bookId} onChange={e=>setReadingForm({...readingForm, bookId:e.target.value})} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`} />
-                   </div>
-                   <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-slate-500">Book Subject</label>
-                      <select required value={readingForm.bookSubject} onChange={e=>setReadingForm({...readingForm, bookSubject:e.target.value})} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}>
-                         <option value="">Select</option>
-                         <option>Science</option><option>Math</option><option>English</option><option>History</option>
-                      </select>
-                   </div>
+                <div className="space-y-1">
+                   <label className="text-[10px] font-bold uppercase text-slate-500">Select Book(s)</label>
+                   <SearchableMultiSelect 
+                     options={bookOptions} 
+                     selectedValues={readingForm.selectedBooks} 
+                     onChange={(vals) => setReadingForm({...readingForm, selectedBooks: vals})} 
+                     placeholder="-- Choose Book(s) --" 
+                     isDarkMode={isDarkMode} 
+                   />
                 </div>
                 <div className="flex gap-3 pt-6">
                    <button type="button" onClick={()=>setShowReadingModal(false)} className="flex-1 py-4 rounded-2xl bg-slate-100 text-slate-600 font-bold">Cancel</button>
@@ -618,23 +798,23 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
              <form onSubmit={handleStudentLending} className="space-y-4">
                 <div className="space-y-1">
                    <label className="text-[10px] font-bold uppercase text-slate-500">Student</label>
-                   <select required onChange={e => {
-                      const s = students.find(x => x.name === e.target.value);
-                      setStudentLendingForm({...studentLendingForm, studentName: e.target.value, class: s?.class || '', sec: s?.section || ''});
-                   }} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}>
-                      <option value="">-- Choose Student --</option>
-                      {students.map(s => <option key={s.id} value={s.name}>{s.name} (Class {s.class})</option>)}
-                   </select>
+                   <SearchableSelect 
+                     options={studentOptions} 
+                     value={studentLendingForm.studentId} 
+                     onChange={(val) => setStudentLendingForm({...studentLendingForm, studentId: val})} 
+                     placeholder="-- Choose Student --" 
+                     isDarkMode={isDarkMode} 
+                   />
                 </div>
                 <div className="space-y-1">
-                   <label className="text-[10px] font-bold uppercase text-slate-500">Book</label>
-                   <select required onChange={e => {
-                      const b = books.find(x => x.title === e.target.value);
-                      setStudentLendingForm({...studentLendingForm, bookName: e.target.value, bookId: b?.isbn || ''});
-                   }} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}>
-                      <option value="">-- Choose Book --</option>
-                      {books.filter(b=>b.stock > 0).map(b => <option key={b.id} value={b.title}>{b.title} (Available: {b.stock})</option>)}
-                   </select>
+                   <label className="text-[10px] font-bold uppercase text-slate-500">Select Book(s)</label>
+                   <SearchableMultiSelect 
+                     options={bookOptions} 
+                     selectedValues={studentLendingForm.selectedBooks} 
+                     onChange={(vals) => setStudentLendingForm({...studentLendingForm, selectedBooks: vals})} 
+                     placeholder="-- Choose Book(s) --" 
+                     isDarkMode={isDarkMode} 
+                   />
                 </div>
                 <div className="space-y-1">
                    <label className="text-[10px] font-bold uppercase text-slate-500">Expected Return Date</label>
@@ -656,23 +836,23 @@ export default function StaffLibrary({ isDarkMode, showMessage, students = [], t
              <form onSubmit={handleTeacherLending} className="space-y-4">
                 <div className="space-y-1">
                    <label className="text-[10px] font-bold uppercase text-slate-500">Teacher</label>
-                   <select required onChange={e => {
-                      const t = teachers.find(x => x.name === e.target.value);
-                      setTeacherLendingForm({...teacherLendingForm, teacherName: e.target.value, teacherSubject: t?.subject || ''});
-                   }} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`}>
-                      <option value="">-- Choose Teacher --</option>
-                      {teachers.map(t => <option key={t.id} value={t.name}>{t.name} ({t.subject})</option>)}
-                   </select>
+                   <SearchableSelect 
+                     options={teacherOptions} 
+                     value={teacherLendingForm.teacherId} 
+                     onChange={(val) => setTeacherLendingForm({...teacherLendingForm, teacherId: val})} 
+                     placeholder="-- Choose Teacher --" 
+                     isDarkMode={isDarkMode} 
+                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                   <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-slate-500">Book ID</label>
-                      <input required value={teacherLendingForm.bookId} onChange={e=>setTeacherLendingForm({...teacherLendingForm, bookId:e.target.value})} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`} />
-                   </div>
-                   <div className="space-y-1">
-                      <label className="text-[10px] font-bold uppercase text-slate-500">Book Subject</label>
-                      <input required value={teacherLendingForm.bookSubject} onChange={e=>setTeacherLendingForm({...teacherLendingForm, bookSubject:e.target.value})} className={`w-full px-4 py-3 rounded-2xl border ${isDarkMode ? 'bg-gray-700 border-gray-600' : ''}`} />
-                   </div>
+                <div className="space-y-1">
+                   <label className="text-[10px] font-bold uppercase text-slate-500">Select Book(s)</label>
+                   <SearchableMultiSelect 
+                     options={bookOptions} 
+                     selectedValues={teacherLendingForm.selectedBooks} 
+                     onChange={(vals) => setTeacherLendingForm({...teacherLendingForm, selectedBooks: vals})} 
+                     placeholder="-- Choose Book(s) --" 
+                     isDarkMode={isDarkMode} 
+                   />
                 </div>
                 <div className="space-y-1">
                    <label className="text-[10px] font-bold uppercase text-slate-500">Expected Return Date</label>

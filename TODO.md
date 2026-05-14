@@ -39,3 +39,4 @@ const sectionOptions = assignedSections.length > 0 ? assignedSections : defaultS
 - `school-frontend/src/app/dashboard/components/TeacherDashboard.js`
 
 ## Status: ✅ COMPLETED
+![alt text](image-2.png)

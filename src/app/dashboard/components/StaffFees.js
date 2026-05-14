@@ -37,6 +37,9 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
   const [payModal, setPayModal] = useState(null);
   const [payAmount, setPayAmount] = useState('');
 
+  // Proof verification modal
+  const [proofModal, setProofModal] = useState(null);
+
   const allStructures = useMemo(() => feeUtils.getAllStructures(), [refresh]);
   const allPlans      = useMemo(() => feeUtils.getAllPlans(),      [refresh]);
   const allInvoices   = useMemo(() => feeUtils.getAllInvoices(),   [refresh]);
@@ -74,7 +77,12 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
 
   const filtered = useMemo(() => {
     return enriched.filter(s => {
-      const nameMatch = s.name?.toLowerCase().includes(search.toLowerCase());
+      const searchLower = search.toLowerCase();
+      const nameMatch = (s.name?.toLowerCase().includes(searchLower)) ||
+                        (s.className?.toLowerCase().includes(searchLower)) ||
+                        (s.section?.toLowerCase().includes(searchLower)) ||
+                        (s.sec?.toLowerCase().includes(searchLower));
+      
       if (statusFilter === 'all')     return nameMatch;
       if (statusFilter === 'paid')    return nameMatch && s.overallStatus === 'paid';
       if (statusFilter === 'partial') return nameMatch && s.overallStatus === 'partial';
@@ -91,7 +99,8 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
     const paid    = allInvoices.filter(i => i.status === 'paid').length;
     const partial = allInvoices.filter(i => i.status === 'partial').length;
     const unpaid  = allInvoices.filter(i => i.status === 'unpaid').length;
-    return { total, collected, paid, partial, unpaid };
+    const pendingVerification = allInvoices.filter(i => i.status === 'processing').length;
+    return { total, collected, paid, partial, unpaid, pendingVerification };
   }, [allInvoices, refresh]);
 
   const openSetup = (student) => {
@@ -163,6 +172,20 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
     showMessage('Payment recorded!','success');
     setPayModal(null);
     setPayAmount('');
+  };
+
+  const handleApproveProof = (invoiceId) => {
+    feeUtils.approvePayment(invoiceId);
+    reload();
+    showMessage('Payment approved!','success');
+    setProofModal(null);
+  };
+
+  const handleRejectProof = (invoiceId) => {
+    feeUtils.rejectPayment(invoiceId);
+    reload();
+    showMessage('Payment proof rejected.','warning');
+    setProofModal(null);
   };
 
   const computeTotal = () => FEE_FIELDS.reduce((sum, f) => sum + (parseFloat(struct[f.key])||0), 0);
@@ -281,8 +304,8 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
         {[
           { label:'Total Billed',    val:`₹${summary.total.toLocaleString()}`,      color:'text-blue-600',    bg: isDarkMode?'bg-blue-900/30':'bg-blue-50' },
           { label:'Collected',       val:`₹${summary.collected.toLocaleString()}`,  color:'text-emerald-600', bg: isDarkMode?'bg-emerald-900/30':'bg-emerald-50' },
-          { label:'Paid',            val:summary.paid,                              color:'text-emerald-600', bg: isDarkMode?'bg-emerald-900/30':'bg-emerald-50' },
-          { label:'Partial',         val:summary.partial,                           color:'text-amber-600',   bg: isDarkMode?'bg-amber-900/30':'bg-amber-50' },
+          { label:'Verification',    val:summary.pendingVerification,               color:'text-amber-600',   bg: isDarkMode?'bg-amber-900/30':'bg-amber-50' },
+          { label:'Partial',         val:summary.partial,                           color:'text-indigo-600',  bg: isDarkMode?'bg-indigo-900/30':'bg-indigo-50' },
           { label:'Unpaid',          val:summary.unpaid,                            color:'text-red-600',     bg: isDarkMode?'bg-red-900/30':'bg-red-50' },
         ].map(c => (
           <div key={c.label} className={`p-5 rounded-2xl border ${cardBg} ${c.bg}`}>
@@ -293,11 +316,14 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
       </div>
 
       {/* Tab Nav */}
-      <div className={`flex flex-wrap p-1.5 rounded-2xl w-fit ${isDarkMode?'bg-gray-800':'bg-slate-200'}`}>
-        {[['students','👨‍🎓 Students'],['invoices','🧾 Invoices']].map(([id,label])=>(
-          <button key={id} onClick={()=>setTab(id)}
-            className={`px-6 py-2.5 rounded-xl text-xs font-black transition-all ${tab===id?'bg-emerald-600 text-white shadow-lg':'${isDarkMode?\"text-gray-400\":\"text-slate-700\"}'}`}>
-            {label}
+      <div className="flex gap-4 border-b border-slate-200">
+        {['students', 'verification', 'reports'].map(t => (
+          <button
+            key={t}
+            onClick={() => setTab(t)}
+            className={`pb-4 px-2 text-sm font-black uppercase tracking-widest transition-all ${tab === t ? 'text-emerald-600 border-b-2 border-emerald-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            {t === 'verification' ? `Verification (${summary.pendingVerification})` : t}
           </button>
         ))}
       </div>
@@ -306,7 +332,7 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
       {tab === 'students' && (
         <div className={`p-6 rounded-[2rem] border shadow-xl ${cardBg}`}>
           <div className="flex flex-wrap items-center gap-4 mb-6">
-            <input placeholder="Search student..." value={search} onChange={e=>setSearch(e.target.value)}
+            <input placeholder="Search by Name, Class, or Sec..." value={search} onChange={e=>setSearch(e.target.value)}
               className={`flex-1 max-w-sm px-5 py-3 rounded-2xl border text-sm font-bold ${isDarkMode?'bg-gray-700 border-gray-600 text-white':'bg-white border-slate-200 text-slate-900'}`}/>
             <div className={`flex p-1 rounded-xl ${isDarkMode?'bg-gray-900':'bg-slate-100'}`}>
               {[['all','All'],['paid','Paid'],['partial','Partial'],['unpaid','Unpaid'],['setup','No Setup']].map(([v,l])=>(
@@ -328,7 +354,6 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
               <tbody className={`divide-y ${isDarkMode?'divide-gray-700/50':'divide-slate-50'}`}>
                 {filtered.map(s => {
                   const inv = s.latestInv;
-                  // Use aggregated overall status for the badge
                   const os = s.overallStatus;
                   const statusColor =
                     os === 'paid'       ? 'bg-emerald-100 text-emerald-600' :
@@ -381,114 +406,175 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
         </div>
       )}
 
-      {/* INVOICES TAB */}
-      {tab === 'invoices' && (
-        <div className={`p-6 rounded-[2rem] border shadow-xl ${cardBg}`}>
-          <h3 className={`text-xl font-black mb-6 ${primary}`}>All Invoices</h3>
-          <div className="overflow-x-auto">
-            <table className="w-full">
-              <thead>
-                <tr className={`text-[10px] font-black uppercase border-b ${isDarkMode?'border-gray-700 text-gray-500':'border-slate-100 text-slate-400'}`}>
-                  {['Invoice #','Student','Plan','Total','Paid','Due','Status','Action'].map(h=>(
-                    <th key={h} className="p-4 text-left">{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className={`divide-y ${isDarkMode?'divide-gray-700/50':'divide-slate-50'}`}>
-                {allInvoices.slice().reverse().map(inv => {
-                  const sc = inv.status==='paid'?'bg-emerald-100 text-emerald-600':inv.status==='partial'?'bg-amber-100 text-amber-600':'bg-red-100 text-red-600';
-                  return (
-                    <tr key={inv.id} className={`transition-all ${isDarkMode?'hover:bg-gray-700/30':'hover:bg-slate-50'}`}>
-                      <td className={`p-4 text-xs font-black text-blue-600`}>{inv.invoiceNo}</td>
-                      <td className={`p-4 font-black text-sm ${primary}`}>{inv.studentName}</td>
-                      <td className={`p-4 text-xs font-bold ${secondary}`}>{inv.installmentLabel || inv.paymentPlan?.replace('_',' ')}</td>
-                      <td className={`p-4 font-black ${primary}`}>₹{(inv.totalFee||0).toLocaleString()}</td>
-                      <td className="p-4 font-black text-emerald-600">₹{(inv.paidAmount||0).toLocaleString()}</td>
-                      <td className={`p-4 text-xs font-bold ${secondary}`}>{inv.dueDate}</td>
-                      <td className="p-4"><span className={`px-2 py-1 rounded text-[9px] font-black uppercase ${sc}`}>{inv.status}</span></td>
-                      <td className="p-4 flex gap-2">
-                        <button onClick={()=>setPreviewInv(inv)} className="px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-[10px] font-black">View</button>
-                        <button
-                          onClick={() => handleDownloadInvoice(inv)}
-                          className="inline-flex h-8 w-8 items-center justify-center rounded-lg bg-slate-100 text-slate-700 transition-all hover:bg-slate-200"
-                          title={`Download invoice for ${inv.studentName}`}
-                          aria-label={`Download invoice for ${inv.studentName}`}
-                        >
-                          <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v12m0 0l-4-4m4 4l4-4M5 21h14" />
-                          </svg>
-                        </button>
-                        {inv.status!=='paid' && (
-                          <button onClick={()=>{setPayModal(inv);setPayAmount('');}} className="px-3 py-1.5 bg-amber-500 text-white rounded-lg text-[10px] font-black">Pay</button>
-                        )}
-                      </td>
-                    </tr>
-                  );
-                })}
-                {allInvoices.length===0 && (
-                  <tr><td colSpan={8} className="py-16 text-center text-sm font-bold text-slate-400">No invoices generated yet.</td></tr>
-                )}
-              </tbody>
-            </table>
+      {/* Verification Tab Content */}
+      {tab === 'verification' && (
+        <div className="space-y-4">
+          <div className="flex justify-between items-center">
+            <h2 className={`text-xl font-black ${primary}`}>Payment Proofs Pending Verification</h2>
+            <p className="text-sm font-bold text-slate-400">{allInvoices.filter(i => i.status === 'processing').length} Pending</p>
           </div>
+          
+          <div className="grid gap-4">
+            {allInvoices.filter(i => i.status === 'processing').map(inv => (
+              <div key={inv.id} className={`p-6 rounded-2xl border ${cardBg} flex flex-wrap items-center justify-between gap-6`}>
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center text-xl shadow-inner">📄</div>
+                  <div>
+                    <h4 className={`font-black ${primary}`}>{inv.studentName}</h4>
+                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Inv: {inv.invoiceNo} • {inv.installmentLabel}</p>
+                  </div>
+                </div>
+                
+                <div className="text-right">
+                  <p className="text-xs font-black text-slate-400 uppercase">Amount Submitted</p>
+                  <p className="text-xl font-black text-emerald-600">{formatCurrency(inv.paymentProof?.amount)}</p>
+                </div>
+                
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => setProofModal(inv)}
+                    className="px-6 py-2.5 bg-indigo-600 text-white rounded-xl text-xs font-black hover:bg-indigo-700 shadow-lg shadow-indigo-600/20 transition-all"
+                  >
+                    View Proof & Verify
+                  </button>
+                </div>
+              </div>
+            ))}
+            {allInvoices.filter(i => i.status === 'processing').length === 0 && (
+              <div className="text-center py-20 bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+                <p className="text-slate-400 font-bold italic">All clear! No pending verifications.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Reports Tab Content */}
+      {tab === 'reports' && (
+        <div className="p-12 text-center bg-slate-50 rounded-3xl border-2 border-dashed border-slate-200">
+          <p className="text-slate-400 font-bold italic">Reports module coming soon...</p>
         </div>
       )}
 
       {/* FEE SETUP MODAL */}
       {setupStudent && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={()=>setSetupStudent(null)}/>
-          <div className={`relative flex max-h-[90vh] w-full max-w-2xl flex-col overflow-hidden rounded-[2rem] shadow-2xl ${isDarkMode?'bg-gray-800 border border-gray-700':'bg-white'}`}>
-            <div className="min-h-0 flex-1 overflow-y-auto p-8">
-            <h3 className={`text-xl font-black mb-1 ${primary}`}>Fee Structure</h3>
-            <p className={`text-xs font-bold mb-6 ${secondary}`}>{setupStudent.name} · Class {setupStudent.className}</p>
-
-            <div className="grid grid-cols-2 gap-4 mb-6">
-              {FEE_FIELDS.map(f => (
-                <div key={f.key}>
-                  <label className={`text-[10px] font-black uppercase mb-1 block ${secondary}`}>{f.icon} {f.label}</label>
-                  <input type="number" min="0" placeholder="0" value={struct[f.key]}
-                    onChange={e=>setStruct({...struct,[f.key]:e.target.value})}
-                    className={inputCls}/>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className={`w-full max-w-2xl rounded-[2rem] shadow-2xl overflow-hidden ${cardBg}`}>
+            <div className="p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className={`text-2xl font-black ${primary}`}>Fee Configuration</h3>
+                  <p className={`text-sm font-bold ${secondary} mt-1`}>Student: {setupStudent.name}</p>
                 </div>
-              ))}
-              <div className="col-span-2">
-                <label className={`text-[10px] font-black uppercase mb-1 block ${secondary}`}>⚠️ Fine Reason</label>
-                <input placeholder="Reason for fine (optional)" value={struct.fineReason}
-                  onChange={e=>setStruct({...struct,fineReason:e.target.value})} className={inputCls}/>
+                <button onClick={() => setSetupStudent(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">✕</button>
               </div>
-            </div>
 
-            <div className={`p-4 rounded-2xl mb-6 ${isDarkMode?'bg-gray-900':'bg-slate-50'}`}>
-              <div className="flex justify-between items-center">
-                <span className={`text-sm font-black ${secondary}`}>Total Fee</span>
-                <span className="text-2xl font-black text-emerald-600">₹{computeTotal().toLocaleString()}</span>
-              </div>
-            </div>
-
-            <div className="mb-6">
-              <label className={`text-[10px] font-black uppercase mb-2 block ${secondary}`}>Payment Plan</label>
-              <div className="grid grid-cols-3 gap-3">
-                {[['one_time','One Time'],['monthly','Monthly'],['installment','Installment']].map(([v,l])=>(
-                  <button key={v} onClick={()=>setPlan({...plan,planType:v})}
-                    className={`py-3 rounded-xl text-xs font-black border-2 transition-all ${plan.planType===v?'border-emerald-500 bg-emerald-500 text-white':'border-slate-200 dark:border-gray-700'}`}>{l}</button>
-                ))}
-              </div>
-              {plan.planType==='installment' && (
-                <div className="mt-4">
-                  <label className={`text-[10px] font-black uppercase mb-1 block ${secondary}`}>Number of Months</label>
-                  <select value={plan.installmentMonths} onChange={e=>setPlan({...plan,installmentMonths:e.target.value})} className={inputCls}>
-                    {['3','6','12'].map(m=><option key={m} value={m}>{m} Months (₹{Math.ceil(computeTotal()/parseInt(m)).toLocaleString()}/mo)</option>)}
-                  </select>
+              <div className="grid md:grid-cols-2 gap-8">
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Select Components</h4>
+                  <div className="grid grid-cols-1 gap-2 max-h-60 overflow-y-auto pr-2">
+                    {FEE_FIELDS.map(f => (
+                      <div key={f.key} className="flex items-center gap-3">
+                        <span className="text-lg w-8 text-center">{f.icon}</span>
+                        <input 
+                          type="number" 
+                          placeholder={f.label}
+                          value={struct[f.key]}
+                          onChange={e => setStruct({ ...struct, [f.key]: e.target.value })}
+                          className={inputCls}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="pt-4 border-t border-slate-100">
+                    <p className={`text-lg font-black ${primary}`}>Total Annual: {formatCurrency(computeTotal())}</p>
+                  </div>
                 </div>
-              )}
-            </div>
 
-            </div>
+                <div className="space-y-4">
+                  <h4 className="text-[10px] font-black uppercase text-slate-400 tracking-widest">Payment Strategy</h4>
+                  <div className="space-y-4">
+                    <select value={plan.planType} onChange={e => setPlan({ ...plan, planType: e.target.value })} className={inputCls}>
+                      <option value="one_time">Full Payment (One-Time)</option>
+                      <option value="installment">Installments</option>
+                      <option value="monthly">Monthly Cycle</option>
+                    </select>
+                    {plan.planType === 'installment' && (
+                      <select value={plan.installmentMonths} onChange={e => setPlan({ ...plan, installmentMonths: e.target.value })} className={inputCls}>
+                        <option value="3">3 Installments</option>
+                        <option value="4">4 Installments</option>
+                        <option value="6">6 Installments</option>
+                      </select>
+                    )}
+                  </div>
+                  <div className="p-4 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-700">
+                    <p className="text-xs font-bold leading-relaxed">
+                      {plan.planType === 'installment' 
+                        ? `The total fee will be divided into ${plan.installmentMonths} equal invoices.` 
+                        : plan.planType === 'monthly' 
+                        ? "12 invoices will be generated, one for each month." 
+                        : "One single invoice will be generated for the total amount."}
+                    </p>
+                  </div>
+                </div>
+              </div>
 
-            <div className={`flex gap-4 border-t px-8 py-6 ${isDarkMode?'border-gray-700':'border-slate-200'}`}>
-              <button onClick={()=>setSetupStudent(null)} className={`flex-1 py-3 rounded-xl font-black text-xs uppercase ${isDarkMode?'bg-gray-700 text-gray-300':'bg-slate-100 text-slate-600'}`}>Cancel</button>
-              <button onClick={handleSaveSetup} className="flex-[2] py-3 rounded-xl bg-emerald-600 text-white font-black text-xs uppercase shadow-lg">Save & Apply</button>
+              <div className="mt-8 pt-6 border-t border-slate-100 flex gap-4">
+                <button onClick={handleSaveSetup} className="flex-1 py-4 bg-emerald-600 text-white rounded-2xl font-black text-lg shadow-xl shadow-emerald-600/30 hover:bg-emerald-700 active:scale-[0.98] transition-all">Save Configuration</button>
+                <button onClick={() => setSetupStudent(null)} className={`flex-1 py-4 rounded-2xl font-black text-lg border ${isDarkMode ? 'border-gray-600 text-gray-300' : 'border-slate-200 text-slate-600 hover:bg-slate-50'}`}>Cancel</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* PROOF VERIFICATION MODAL */}
+      {proofModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className={`w-full max-w-lg rounded-[2rem] shadow-2xl overflow-hidden ${cardBg}`}>
+            <div className="p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className={`text-2xl font-black ${primary}`}>Verify Payment Proof</h3>
+                  <p className={`text-sm font-bold ${secondary} mt-1`}>Submitted by: {proofModal.studentName}</p>
+                </div>
+                <button onClick={() => setProofModal(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">✕</button>
+              </div>
+
+              <div className="space-y-6">
+                <div className="bg-slate-900 rounded-2xl overflow-hidden shadow-inner">
+                   <img src={proofModal.paymentProof?.screenshot} className="w-full h-64 object-contain" alt="Payment Proof" />
+                </div>
+
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex justify-between items-center">
+                   <div>
+                     <p className="text-[10px] font-black uppercase text-slate-400">Claimed Amount</p>
+                     <p className="text-xl font-black text-emerald-600">{formatCurrency(proofModal.paymentProof?.amount)}</p>
+                   </div>
+                   <div className="text-right">
+                     <p className="text-[10px] font-black uppercase text-slate-400">Submitted On</p>
+                     <p className="text-xs font-bold text-slate-700">{new Date(proofModal.paymentProof?.submittedAt).toLocaleString()}</p>
+                   </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                   <button 
+                     onClick={() => handleApproveProof(proofModal.id)}
+                     className="py-4 bg-emerald-600 text-white rounded-2xl font-black shadow-lg shadow-emerald-600/20 hover:bg-emerald-700 transition-all active:scale-95"
+                   >
+                     Approve Payment
+                   </button>
+                   <button 
+                     onClick={() => handleRejectProof(proofModal.id)}
+                     className="py-4 bg-rose-600 text-white rounded-2xl font-black shadow-lg shadow-rose-600/20 hover:bg-rose-700 transition-all active:scale-95"
+                   >
+                     Reject Proof
+                   </button>
+                </div>
+                <p className="text-[10px] text-center text-slate-400 font-bold px-6">
+                  Verify the transaction ID and amount in the screenshot against your bank statement before approving.
+                </p>
+              </div>
             </div>
           </div>
         </div>
@@ -496,36 +582,39 @@ export default function StaffFees({ isDarkMode, showMessage, students=[], parent
 
       {/* INVOICE PREVIEW MODAL */}
       {previewInv && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 overflow-y-auto">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-md" onClick={()=>setPreviewInv(null)}/>
-          <div className="relative w-full max-w-lg my-8 p-8 rounded-[2rem] shadow-2xl bg-white text-slate-900">
-            <div className="text-center mb-8 border-b pb-6">
-              <h2 className="text-2xl font-black text-slate-900">🏫 Fee Invoice</h2>
-              <p className="text-sm font-bold text-slate-500 mt-1">{previewInv.invoiceNo}</p>
-              <p className="text-base font-black text-blue-700 mt-2">{previewInv.studentName}</p>
-              <p className="text-xs font-bold text-slate-500">Class {previewInv.className} · Due: {previewInv.dueDate}</p>
-            </div>
-
-            <div className="space-y-2 mb-6">
-              {FEE_FIELDS.map(f => previewInv[f.key] > 0 && (
-                <div key={f.key} className="flex justify-between items-center py-2 border-b border-slate-50">
-                  <span className="text-sm font-bold text-slate-600">{f.icon} {f.label}</span>
-                  <span className="text-sm font-black text-slate-900">₹{parseFloat(previewInv[f.key]).toLocaleString()}</span>
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className={`w-full max-w-lg rounded-[2rem] shadow-2xl overflow-hidden ${cardBg}`}>
+            <div className="p-8">
+              <div className="flex justify-between items-start mb-6">
+                <div>
+                  <h3 className={`text-2xl font-black ${primary}`}>Fee Invoice Preview</h3>
+                  <p className={`text-sm font-bold ${secondary} mt-1`}>{previewInv.studentName} · {previewInv.invoiceNo}</p>
+                  <p className="text-xs font-bold text-slate-500">Class {previewInv.className} · Due: {previewInv.dueDate}</p>
                 </div>
-              ))}
-              {previewInv.fineReason && <p className="text-xs text-amber-600 font-bold">Fine Reason: {previewInv.fineReason}</p>}
-            </div>
+                <button onClick={() => setPreviewInv(null)} className="p-2 hover:bg-slate-100 rounded-full transition-colors">✕</button>
+              </div>
 
-            <div className="p-4 rounded-2xl bg-slate-50 mb-4">
-              <div className="flex justify-between"><span className="font-black text-slate-700">Total</span><span className="text-xl font-black text-blue-700">₹{(previewInv.totalFee||0).toLocaleString()}</span></div>
-              <div className="flex justify-between mt-1"><span className="font-bold text-sm text-slate-500">Paid</span><span className="font-black text-emerald-600">₹{(previewInv.paidAmount||0).toLocaleString()}</span></div>
-              <div className="flex justify-between mt-1"><span className="font-bold text-sm text-slate-500">Balance</span><span className="font-black text-red-500">₹{Math.max(0,(previewInv.totalFee||0)-(previewInv.paidAmount||0)).toLocaleString()}</span></div>
-            </div>
+              <div className="space-y-2 mb-6">
+                {FEE_FIELDS.map(f => previewInv[f.key] > 0 && (
+                  <div key={f.key} className="flex justify-between items-center py-2 border-b border-slate-50">
+                    <span className="text-sm font-bold text-slate-600">{f.icon} {f.label}</span>
+                    <span className="text-sm font-black text-slate-900">₹{parseFloat(previewInv[f.key]).toLocaleString()}</span>
+                  </div>
+                ))}
+                {previewInv.fineReason && <p className="text-xs text-amber-600 font-bold">Fine Reason: {previewInv.fineReason}</p>}
+              </div>
 
-            <div className="flex gap-3">
-              <button onClick={()=>setPreviewInv(null)} className="flex-1 py-3 rounded-xl bg-slate-100 text-slate-700 font-black text-xs">Close</button>
-              <button onClick={()=>handleDownloadInvoice(previewInv)} className="flex-1 py-3 rounded-xl bg-emerald-600 text-white font-black text-xs">Download</button>
-              <button onClick={()=>window.print()} className="flex-1 py-3 rounded-xl bg-blue-600 text-white font-black text-xs">🖨️ Print</button>
+              <div className="p-4 rounded-2xl bg-slate-50 mb-6">
+                <div className="flex justify-between"><span className="font-black text-slate-700">Total Fee</span><span className="text-xl font-black text-blue-700">₹{(previewInv.totalFee||0).toLocaleString()}</span></div>
+                <div className="flex justify-between mt-1"><span className="font-bold text-sm text-slate-500">Amount Paid</span><span className="font-black text-emerald-600">₹{(previewInv.paidAmount||0).toLocaleString()}</span></div>
+                <div className="flex justify-between mt-1"><span className="font-bold text-sm text-slate-500">Outstanding</span><span className="font-black text-red-500">₹{Math.max(0,(previewInv.totalFee||0)-(previewInv.paidAmount||0)).toLocaleString()}</span></div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-3">
+                <button onClick={()=>setPreviewInv(null)} className="py-3 rounded-xl bg-slate-100 text-slate-700 font-black text-xs">Close</button>
+                <button onClick={()=>handleDownloadInvoice(previewInv)} className="py-3 rounded-xl bg-emerald-600 text-white font-black text-xs">Download</button>
+                <button onClick={()=>window.print()} className="py-3 rounded-xl bg-blue-600 text-white font-black text-xs">🖨️ Print</button>
+              </div>
             </div>
           </div>
         </div>
